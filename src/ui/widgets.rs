@@ -13,11 +13,11 @@ pub fn render_budget(frame: &mut Frame, area: Rect, budget: &BudgetEnvelope) {
     let pct = budget.pct_consumed();
     let style = Theme::budget_style(pct);
     let label = format!(
-        "${:.4} / ${:.2} ({}) — {} remaining",
+        "${:.4} / ${:.2} ({}) — ${:.4} remaining",
         budget.spent_usd,
         budget.limit_usd,
         budget.status(),
-        format!("${:.4}", budget.remaining()),
+        budget.remaining(),
     );
     let gauge = Gauge::default()
         .block(
