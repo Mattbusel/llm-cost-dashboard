@@ -124,7 +124,10 @@ impl CostLedger {
                 let p99 = if latencies.is_empty() {
                     0.0
                 } else {
-                    let idx = ((latencies.len() as f64 * 0.99) as usize).min(latencies.len() - 1);
+                    // ceil-based index: for N=100, gives index 98 (99th value), not 99 (100th).
+                    let idx = ((latencies.len() as f64 * 0.99).ceil() as usize)
+                        .saturating_sub(1)
+                        .min(latencies.len() - 1);
                     latencies[idx] as f64
                 };
                 (
@@ -144,7 +147,7 @@ impl CostLedger {
             .collect()
     }
 
-    /// Last N records (most recent first).
+    /// Last N records (oldest first). Callers that need newest-first should call `.rev()`.
     pub fn last_n(&self, n: usize) -> &[CostRecord] {
         let len = self.records.len();
         if n >= len {
@@ -329,7 +332,8 @@ mod tests {
             ledger.add(r).unwrap();
         }
         let stats = ledger.by_model();
-        // p99 of 1..=100 sorted is index 98 = 99ms
-        assert!(stats["gpt-4o-mini"].p99_latency_ms >= 99.0);
+        // p99 of 1..=100 sorted: ceil(100*0.99)-1 = index 98 → value 99ms (not 100ms)
+        assert_eq!(stats["gpt-4o-mini"].p99_latency_ms, 99.0);
+        assert!(stats["gpt-4o-mini"].p99_latency_ms < 100.0);
     }
 }
