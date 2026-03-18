@@ -51,9 +51,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Run lib tests
         # Use --lib to avoid tests that require an interactive terminal (crossterm/ratatui).
-        run: cargo test --lib --locked
+        run: cargo test --lib
       - name: Build release binary
-        run: cargo build --release --locked
+        run: cargo build --release
 
   # ── Documentation ─────────────────────────────────────────────────────────────
   docs:
