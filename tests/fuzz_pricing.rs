@@ -50,12 +50,7 @@ fn unknown_model_zero_tokens_is_zero() {
 #[test]
 fn unknown_model_lookup_returns_fallback() {
     let (fi, fo) = FALLBACK_PRICING;
-    let unknowns = [
-        "no-such-model",
-        "gpt-4o-ultra-super",
-        "",
-        "llama-3-8b",
-    ];
+    let unknowns = ["no-such-model", "gpt-4o-ultra-super", "", "llama-3-8b"];
     for name in &unknowns {
         let (i, o) = lookup(name);
         assert!(
