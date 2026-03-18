@@ -1,4 +1,5 @@
 //! Comprehensive unit tests for llm-cost-dashboard.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //!
 //! These tests exercise `pricing`, `log` (parser), `cost` (calculator /
 //! aggregation), and `budget` modules using only their public APIs.
@@ -17,14 +18,8 @@ use llm_cost_dashboard::{
 #[test]
 fn pricing_every_known_model_has_nonzero_rates() {
     for (model, input_rate, output_rate) in PRICING {
-        assert!(
-            *input_rate > 0.0,
-            "model '{model}' has zero input rate"
-        );
-        assert!(
-            *output_rate > 0.0,
-            "model '{model}' has zero output rate"
-        );
+        assert!(*input_rate > 0.0, "model '{model}' has zero input rate");
+        assert!(*output_rate > 0.0, "model '{model}' has zero output rate");
     }
 }
 
@@ -170,7 +165,8 @@ fn parser_optional_provider_field_is_used_when_present() {
 #[test]
 fn parser_error_field_marks_success_false() {
     let mut log = RequestLog::new();
-    let line = r#"{"model":"gpt-4o","input_tokens":0,"output_tokens":0,"latency_ms":5,"error":"timeout"}"#;
+    let line =
+        r#"{"model":"gpt-4o","input_tokens":0,"output_tokens":0,"latency_ms":5,"error":"timeout"}"#;
     log.ingest_line(line).unwrap();
     let entry = &log.all()[0];
     assert!(!entry.success);
@@ -202,7 +198,13 @@ fn calculator_aggregate_multiple_entries_sums_correctly() {
     // Two records each costing $3.00 → total $6.00
     for _ in 0..2 {
         ledger
-            .add(CostRecord::new("claude-sonnet-4-6", "anthropic", 1_000_000, 0, 50))
+            .add(CostRecord::new(
+                "claude-sonnet-4-6",
+                "anthropic",
+                1_000_000,
+                0,
+                50,
+            ))
             .unwrap();
     }
     assert!((ledger.total_usd() - 6.00).abs() < 1e-9);

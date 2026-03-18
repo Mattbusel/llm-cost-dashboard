@@ -2,6 +2,7 @@
 //!
 //! These tests verify cross-module behaviour: demo mode producing real
 //! CostRecord entries and the pricing table covering all major models.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::len_zero)]
 
 use llm_cost_dashboard::{
     cost::pricing::{lookup, FALLBACK_PRICING},
@@ -90,9 +91,9 @@ fn test_demo_mode_does_not_panic_with_low_budget() {
 #[test]
 fn test_ingest_line_integration() {
     let mut app = App::new(100.0);
-    let line =
-        r#"{"model":"gpt-4o-mini","input_tokens":1000,"output_tokens":500,"latency_ms":20}"#;
-    app.ingest_line(line).expect("valid JSON line should be ingested");
+    let line = r#"{"model":"gpt-4o-mini","input_tokens":1000,"output_tokens":500,"latency_ms":20}"#;
+    app.ingest_line(line)
+        .expect("valid JSON line should be ingested");
     assert_eq!(app.log.len(), 1);
     assert_eq!(app.ledger.len(), 1);
     assert!(app.ledger.total_usd() > 0.0);
@@ -124,7 +125,8 @@ fn test_ingest_malformed_line_does_not_corrupt_state() {
 fn test_ingest_unknown_model_falls_back_to_pricing() {
     let mut app = App::new(100.0);
     let line = r#"{"model":"my-totally-unknown-model-xyz","input_tokens":1000000,"output_tokens":0,"latency_ms":5}"#;
-    app.ingest_line(line).expect("unknown model should be accepted");
+    app.ingest_line(line)
+        .expect("unknown model should be accepted");
     assert_eq!(app.ledger.len(), 1);
     // Cost must be positive (fallback pricing: $5.00/1M input).
     assert!(
@@ -324,7 +326,12 @@ fn test_tui_scroll_past_end_does_not_panic() {
     // Now scroll_offset is 5, but there are 0 records.
     let records = app.ledger.last_n(200);
     // last_n(200).iter().rev().skip(5) should just yield nothing — no panic.
-    let visible: Vec<_> = records.iter().rev().skip(app.scroll_offset).take(20).collect();
+    let visible: Vec<_> = records
+        .iter()
+        .rev()
+        .skip(app.scroll_offset)
+        .take(20)
+        .collect();
     assert!(visible.is_empty());
 }
 

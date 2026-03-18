@@ -171,6 +171,7 @@ impl RequestLog {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 
@@ -246,7 +247,10 @@ mod tests {
     fn test_ingest_error_is_log_parse_error_variant() {
         let mut log = RequestLog::new();
         let err = log.ingest_line("bad").unwrap_err();
-        assert!(matches!(err, crate::error::DashboardError::LogParseError(_)));
+        assert!(matches!(
+            err,
+            crate::error::DashboardError::LogParseError(_)
+        ));
     }
 
     #[test]
@@ -321,8 +325,7 @@ mod tests {
     fn test_multiple_ingests_accumulate() {
         let mut log = RequestLog::new();
         for _ in 0..5 {
-            let line =
-                r#"{"model":"gpt-4o","input_tokens":10,"output_tokens":5,"latency_ms":10}"#;
+            let line = r#"{"model":"gpt-4o","input_tokens":10,"output_tokens":5,"latency_ms":10}"#;
             log.ingest_line(line).unwrap();
         }
         assert_eq!(log.len(), 5);

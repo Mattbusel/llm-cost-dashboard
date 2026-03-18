@@ -37,7 +37,11 @@ fn bench_ledger_aggregation(c: &mut Criterion) {
     group.bench_function("by_model on 1000 records", |b| {
         let mut ledger = CostLedger::new();
         for i in 0u64..1_000 {
-            let model = if i % 2 == 0 { "gpt-4o-mini" } else { "claude-sonnet-4-6" };
+            let model = if i % 2 == 0 {
+                "gpt-4o-mini"
+            } else {
+                "claude-sonnet-4-6"
+            };
             let _ = ledger.add(CostRecord::new(model, "openai", i * 10, i * 5, i));
         }
         b.iter(|| ledger.by_model())

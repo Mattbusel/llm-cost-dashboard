@@ -42,7 +42,11 @@ fn main() {
         .init();
 
     let cli = Cli::parse();
-    info!(budget_usd = cli.budget, demo = cli.demo, "llm-dash starting");
+    info!(
+        budget_usd = cli.budget,
+        demo = cli.demo,
+        "llm-dash starting"
+    );
 
     let mut app = App::new(cli.budget);
 

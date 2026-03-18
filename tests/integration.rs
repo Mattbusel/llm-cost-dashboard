@@ -2,6 +2,7 @@
 //!
 //! These tests exercise the public API as a whole, verifying that components
 //! compose correctly end-to-end.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use llm_cost_dashboard::{
     budget::BudgetEnvelope,
@@ -81,10 +82,8 @@ fn ingest_multiple_valid_lines() {
 #[test]
 fn malformed_line_skipped_gracefully() {
     let mut log = RequestLog::new();
-    log.ingest_line(
-        r#"{"model":"gpt-4o","input_tokens":100,"output_tokens":50,"latency_ms":20}"#,
-    )
-    .unwrap();
+    log.ingest_line(r#"{"model":"gpt-4o","input_tokens":100,"output_tokens":50,"latency_ms":20}"#)
+        .unwrap();
     let err = log.ingest_line("this is not json").unwrap_err();
     assert!(matches!(err, DashboardError::LogParseError(_)));
     // The previously ingested entry is still present.
@@ -145,10 +144,8 @@ fn app_demo_data_produces_nonzero_total() {
 #[test]
 fn app_multiple_malformed_lines_do_not_corrupt_state() {
     let mut app = App::new(50.0);
-    app.ingest_line(
-        r#"{"model":"gpt-4o","input_tokens":100,"output_tokens":50,"latency_ms":10}"#,
-    )
-    .unwrap();
+    app.ingest_line(r#"{"model":"gpt-4o","input_tokens":100,"output_tokens":50,"latency_ms":10}"#)
+        .unwrap();
 
     for bad in &["", "not json", "{}", r#"{"model":"x"}"#] {
         let _ = app.ingest_line(bad); // errors are expected; must not panic

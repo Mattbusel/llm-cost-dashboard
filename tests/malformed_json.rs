@@ -1,4 +1,5 @@
 //! Integration tests for malformed JSON ingestion in the log parser.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //!
 //! Every test here feeds broken or incomplete JSON to [`RequestLog::ingest_line`]
 //! (via the low-level API) and to [`App::ingest_line`] (via the high-level API)
@@ -68,17 +69,15 @@ fn truncated_opening_brace_only() {
 /// A JSON object that has an unclosed string value.
 #[test]
 fn truncated_unclosed_string_value() {
-    assert_parse_error(r#"{"model":"gpt-4o-mini","input_tokens":100,"output_tokens":50,"latency_ms":20"#);
+    assert_parse_error(
+        r#"{"model":"gpt-4o-mini","input_tokens":100,"output_tokens":50,"latency_ms":20"#,
+    );
 }
 
-/// A JSON array of the wrong length or with incompatible element types is
-/// rejected.  Note: serde_json can map a same-length array to a struct's
-/// fields positionally when the types match, so we use a clearly incompatible
-/// array (wrong element types) to guarantee a parse error.
+/// A JSON array instead of a JSON object is rejected.
 #[test]
-fn json_array_wrong_types() {
-    // Three booleans cannot map to (String, u64, u64, u64).
-    assert_parse_error("[true, false, true]");
+fn json_array_instead_of_object() {
+    assert_parse_error(r#"["gpt-4o", 100, 50, 20]"#);
 }
 
 /// A plain JSON string is rejected.
@@ -226,8 +225,7 @@ fn negative_output_tokens_rejected() {
 /// We do not mandate a specific outcome (ok or err) but the call must not panic.
 #[test]
 fn float_latency_ms_no_panic() {
-    let line =
-        r#"{"model":"gpt-4o","input_tokens":100,"output_tokens":50,"latency_ms":10.5}"#;
+    let line = r#"{"model":"gpt-4o","input_tokens":100,"output_tokens":50,"latency_ms":10.5}"#;
     let mut log = RequestLog::new();
     // Either Ok or Err is fine; must not panic.
     let _ = log.ingest_line(line);
@@ -242,9 +240,9 @@ fn float_latency_ms_no_panic() {
 #[test]
 fn valid_entry_preserved_after_errors() {
     let mut log = RequestLog::new();
-    let good =
-        r#"{"model":"gpt-4o-mini","input_tokens":512,"output_tokens":256,"latency_ms":20}"#;
-    log.ingest_line(good).expect("valid line should be accepted");
+    let good = r#"{"model":"gpt-4o-mini","input_tokens":512,"output_tokens":256,"latency_ms":20}"#;
+    log.ingest_line(good)
+        .expect("valid line should be accepted");
     assert_eq!(log.len(), 1);
 
     let bad_inputs = [
@@ -273,7 +271,8 @@ fn app_state_integrity_across_mixed_input() {
     let mut app = App::new(100.0);
     let good =
         r#"{"model":"claude-sonnet-4-6","input_tokens":1000,"output_tokens":500,"latency_ms":50}"#;
-    app.ingest_line(good).expect("valid line should be accepted");
+    app.ingest_line(good)
+        .expect("valid line should be accepted");
 
     let malformed = [
         "",
@@ -293,30 +292,34 @@ fn app_state_integrity_across_mixed_input() {
         );
     }
 
-    assert_eq!(app.log.len(), 1, "only the one valid entry should be present");
+    assert_eq!(
+        app.log.len(),
+        1,
+        "only the one valid entry should be present"
+    );
     assert_eq!(
         app.ledger.len(),
         1,
         "ledger must only contain the one valid record"
     );
-    assert!(app.ledger.total_usd() > 0.0, "valid record cost must be > 0");
+    assert!(
+        app.ledger.total_usd() > 0.0,
+        "valid record cost must be > 0"
+    );
 }
 
 /// Feeding only malformed lines to a fresh App leaves it in a clean state.
 #[test]
 fn app_stays_clean_on_all_malformed_input() {
     let mut app = App::new(50.0);
-    let malformed = [
-        "not json",
-        "{",
-        "[]",
-        r#"{"model":"gpt-4o"}"#,
-        "",
-    ];
+    let malformed = ["not json", "{", "[]", r#"{"model":"gpt-4o"}"#, ""];
     for bad in &malformed {
         let _ = app.ingest_line(bad);
     }
-    assert!(app.log.is_empty(), "log must be empty after only malformed input");
+    assert!(
+        app.log.is_empty(),
+        "log must be empty after only malformed input"
+    );
     assert!(
         app.ledger.is_empty(),
         "ledger must be empty after only malformed input"
