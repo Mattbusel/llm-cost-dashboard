@@ -70,11 +70,11 @@ jobs:
 
   # ── Minimum Supported Rust Version ───────────────────────────────────────────
   msrv:
-    name: MSRV (1.81)
+    name: MSRV (1.82)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.81
+      - uses: dtolnay/rust-toolchain@1.82
       - uses: Swatinem/rust-cache@v2
       - name: Check MSRV build
         run: cargo check
