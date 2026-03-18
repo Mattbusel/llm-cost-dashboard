@@ -1,3 +1,4 @@
+#![deny(missing_docs)]
 //! # llm-cost-dashboard
 //!
 //! Real-time terminal dashboard for LLM token spend.

@@ -1,40 +1,34 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to llm-cost-dashboard are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-## [0.1.0] - 2026-03-17
+## [1.0.0] - 2026-03-17
 
 ### Added
 
-- Real-time terminal dashboard built with ratatui and crossterm.
-- Cost ledger with append-only storage, per-model aggregation, and rolling
-  window monthly projection.
-- Pricing table covering ten major models from Anthropic, OpenAI, and Google,
-  with case-insensitive lookup and a configurable fallback rate for unknown
-  models.
-- JSON log ingestion from newline-delimited files or stdin. Malformed lines
-  return a typed error and are skipped without corrupting the ledger.
-- Budget envelope with a hard spend limit, a configurable soft alert threshold,
-  remaining-balance query, and gauge percentage for the TUI.
-- Demo mode that pre-loads twenty representative requests across five model
-  families for development and demonstration purposes.
-- Trace span store with per-request correlation IDs, tag builder, and failure
-  annotation.
-- `RequestLog` supporting filter-by-model iteration, JSON serialization, and
-  line ingestion.
-- Keyboard controls: quit (`q` / `Esc`), reset (`r`), demo (`d`), scroll
-  (`j` / `k` / arrows).
-- Dashboard layout: summary pane, budget gauge, per-model bar chart, scrollable
-  request table, and a 60-request cost sparkline.
-- CLI via clap: `--budget`, `--log-file`, `--demo` flags.
-- Unified `DashboardError` enum covering ledger, budget, parse, IO,
-  serialization, and terminal failure domains.
-- Comprehensive test suite: unit tests in every source module plus two external
-  test files (`tests/unit_tests.rs`, `tests/integration_tests.rs`) with over
-  100 test functions covering cost accuracy, parser correctness, pricing table
-  completeness, rolling aggregation, demo data validity, and budget enforcement.
+- Initial production release.
+- Real-time ratatui TUI with five panels: title bar, summary, budget gauge,
+  per-model bar chart, recent requests table, spend sparkline, and help bar.
+- Cost ledger (`CostLedger`) with per-model aggregation, p99 latency, and
+  30-day monthly projection.
+- Budget envelope (`BudgetEnvelope`) with hard limit, 80% soft alert threshold,
+  and traffic-light status display.
+- Static pricing table covering 10 models across Anthropic, OpenAI, and Google.
+  Fallback pricing for unknown models.
+- Newline-delimited JSON log ingestion via `--log-file` or stdin pipe.
+- Graceful error handling on malformed log lines: bad lines are skipped with a
+  `LogParseError`; the TUI never panics.
+- `DashboardError` unified error type with variants: `Ledger`, `BudgetExceeded`,
+  `BudgetAlert`, `UnknownModel`, `LogParseError`, `IoError`, `InvalidPricing`,
+  `SerializationError`, `Terminal`.
+- Comprehensive test suite: unit tests in every module plus integration tests
+  in `tests/integration.rs`.
+- CI workflow: `cargo fmt`, `cargo clippy -D warnings`, `cargo test`, and
+  `cargo build --release` on both `ubuntu-latest` and `windows-latest`.
+- Full `cargo doc` coverage: every public struct, enum, function, method, and
+  field carries a `///` doc comment.
+- `--demo` flag to pre-load 20 synthetic records across 7 models.
+- Key bindings: `q`/`Esc` quit, `r` reset, `d` demo, `j`/`k` scroll.
