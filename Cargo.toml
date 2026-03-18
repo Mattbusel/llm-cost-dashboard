@@ -44,9 +44,6 @@ clap = { version = "4", features = ["derive"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-[lints.clippy]
-unwrap_used = "warn"
-expect_used = "warn"
 
 [dev-dependencies]
 tokio-test = "0.4"

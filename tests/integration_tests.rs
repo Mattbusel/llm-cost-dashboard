@@ -18,7 +18,7 @@ fn test_demo_mode_produces_output() {
 
     // The ledger should contain at least one record.
     assert!(
-        app.ledger.len() > 0,
+        app.ledger.is_empty() == false,
         "demo mode should populate the ledger with at least one record"
     );
 
@@ -83,7 +83,7 @@ fn test_demo_mode_does_not_panic_with_low_budget() {
     let mut app = App::new(0.0001);
     app.load_demo_data();
     // If we get here, no panic occurred.
-    assert!(app.ledger.len() > 0);
+    assert!(app.ledger.is_empty() == false);
 }
 
 /// `ingest_line` with valid JSON must add exactly one record to both the
@@ -356,7 +356,7 @@ fn test_tui_by_model_single_model_no_panic() {
 fn test_reset_after_demo_data() {
     let mut app = App::new(50.0);
     app.load_demo_data();
-    assert!(app.ledger.len() > 0);
+    assert!(app.ledger.is_empty() == false);
     app.reset();
     assert_eq!(app.ledger.len(), 0);
     assert_eq!(app.log.len(), 0);
