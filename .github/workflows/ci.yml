@@ -11,6 +11,7 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  # ── Formatting ────────────────────────────────────────────────────────────────
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest
@@ -23,6 +24,7 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+  # ── Linting ───────────────────────────────────────────────────────────────────
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
@@ -35,31 +37,24 @@ jobs:
       - name: Lint
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Build release binary
-        run: cargo build --release --locked
-
+  # ── Tests (cross-platform) ───────────────────────────────────────────────────
   test:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Run unit and integration tests
-        run: cargo test --all-features
+        run: cargo test --all-features --locked
       - name: Build release binary
-        run: cargo build --release
+        run: cargo build --release --locked
 
+  # ── Documentation ─────────────────────────────────────────────────────────────
   docs:
     name: Documentation
     runs-on: ubuntu-latest
@@ -72,8 +67,9 @@ jobs:
         env:
           RUSTDOCFLAGS: "-D warnings"
 
+  # ── Minimum Supported Rust Version ───────────────────────────────────────────
   msrv:
-    name: Minimum Supported Rust Version (1.75)
+    name: MSRV (1.75)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -81,3 +77,32 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Check MSRV build
         run: cargo check --all-features
+
+  # ── Security audit ───────────────────────────────────────────────────────────
+  audit:
+    name: Security audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── Coverage ─────────────────────────────────────────────────────────────────
+  coverage:
+    name: Code coverage (tarpaulin)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-tarpaulin
+        run: cargo install cargo-tarpaulin --locked
+      - name: Run tarpaulin
+        run: cargo tarpaulin --all-features --out Xml --output-dir coverage/
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/cobertura.xml
+          if-no-files-found: warn

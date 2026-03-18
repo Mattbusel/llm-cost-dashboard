@@ -1,6 +1,6 @@
 [package]
 name = "llm-cost-dashboard"
-version = "0.2.0"
+version = "1.0.0"
 edition = "2021"
 rust-version = "1.75"
 description = "Real-time terminal dashboard for LLM token spend - cost/request, projected monthly bills, per-model breakdown"
@@ -8,6 +8,11 @@ keywords = ["llm", "cost", "dashboard", "tui", "ratatui"]
 categories = ["command-line-utilities", "visualization"]
 license = "MIT"
 repository = "https://github.com/Mattbusel/llm-cost-dashboard"
+homepage = "https://github.com/Mattbusel/llm-cost-dashboard"
+documentation = "https://docs.rs/llm-cost-dashboard"
+readme = "README.md"
+authors = ["Matt Busel <matt@example.com>"]
+exclude = ["tests/fixtures/**", ".github/**"]
 
 [[bin]]
 name = "llm-dash"
@@ -39,6 +44,32 @@ clap = { version = "4", features = ["derive"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+[lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+
 [dev-dependencies]
 tokio-test = "0.4"
+# serde_json available in integration tests without re-declaring it as a dep
 serde_json = "1"
+# tempfile: temporary files in tests
+tempfile = "3"
+# criterion: micro-benchmarking harness
+criterion = { version = "0.5", features = ["html_reports"] }
+# proptest: property-based testing
+proptest = "1"
+
+[[bench]]
+name = "cost_bench"
+harness = false
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[profile.dev]
+opt-level = 0
+debug = true
