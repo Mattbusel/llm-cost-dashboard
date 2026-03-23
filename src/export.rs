@@ -429,6 +429,9 @@ mod tests {
     }
 
     // ── CostExporter (timestamped) tests ─────────────────────────────────────
+    // Each test uses export_to_dir with an isolated tempdir so that parallel
+    // test execution never races on a shared current-working-directory or on
+    // identically-named timestamp files.
 
     #[test]
     fn test_export_format_extension_csv() {
@@ -440,69 +443,71 @@ mod tests {
         assert_eq!(ExportFormat::Json.extension(), "json");
     }
 
-    // Helper: runs the export in a temp directory to avoid parallel test filename collisions.
-    fn with_temp_dir(f: impl FnOnce(&std::path::Path)) {
-        let tmp = tempfile::tempdir().unwrap();
-        let original = std::env::current_dir().unwrap();
-        std::env::set_current_dir(tmp.path()).unwrap();
-        f(tmp.path());
-        std::env::set_current_dir(original).unwrap();
-    }
-
     #[test]
     fn test_cost_exporter_csv_creates_file() {
-        with_temp_dir(|_dir| {
-            let ledger = make_ledger();
-            let exporter = CostExporter::new(&ledger);
-            let filename = exporter.export_csv().unwrap();
-            assert!(filename.starts_with("costs_"));
-            assert!(filename.ends_with(".csv"));
-        });
+        let dir = tempfile::tempdir().unwrap();
+        let ledger = make_ledger();
+        let exporter = CostExporter::new(&ledger);
+        let filename = exporter
+            .export_to_dir(dir.path(), ExportFormat::Csv)
+            .unwrap();
+        assert!(filename.starts_with("costs_"));
+        assert!(filename.ends_with(".csv"));
+        assert!(dir.path().join(&filename).exists());
     }
 
     #[test]
     fn test_cost_exporter_json_creates_file() {
-        with_temp_dir(|_dir| {
-            let ledger = make_ledger();
-            let exporter = CostExporter::new(&ledger);
-            let filename = exporter.export_json().unwrap();
-            assert!(filename.starts_with("costs_"));
-            assert!(filename.ends_with(".json"));
-        });
+        let dir = tempfile::tempdir().unwrap();
+        let ledger = make_ledger();
+        let exporter = CostExporter::new(&ledger);
+        let filename = exporter
+            .export_to_dir(dir.path(), ExportFormat::Json)
+            .unwrap();
+        assert!(filename.starts_with("costs_"));
+        assert!(filename.ends_with(".json"));
+        assert!(dir.path().join(&filename).exists());
     }
 
     #[test]
     fn test_cost_exporter_csv_content_has_rows() {
-        with_temp_dir(|_dir| {
-            let ledger = make_ledger();
-            let exporter = CostExporter::new(&ledger);
-            let filename = exporter.export_csv().unwrap();
-            let content = std::fs::read_to_string(&filename).unwrap();
-            assert!(!content.is_empty(), "CSV must not be empty");
-            // The CSV serializer uses the struct field names as the header.
-            assert!(content.contains("model") || content.contains("cost_usd"),
-                "CSV missing expected header");
-        });
+        let dir = tempfile::tempdir().unwrap();
+        let ledger = make_ledger();
+        let exporter = CostExporter::new(&ledger);
+        let filename = exporter
+            .export_to_dir(dir.path(), ExportFormat::Csv)
+            .unwrap();
+        let content = std::fs::read_to_string(dir.path().join(&filename)).unwrap();
+        assert!(!content.is_empty(), "CSV must not be empty");
+        assert!(
+            content.contains("model") || content.contains("cost_usd"),
+            "CSV missing expected header"
+        );
+        assert!(content.contains("gpt-4o-mini"), "CSV missing data row");
     }
 
     #[test]
     fn test_cost_exporter_json_content_is_valid() {
-        with_temp_dir(|_dir| {
-            let ledger = make_ledger();
-            let exporter = CostExporter::new(&ledger);
-            let filename = exporter.export_json().unwrap();
-            let content = std::fs::read_to_string(&filename).unwrap();
-            let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
-            assert!(parsed.is_array());
-        });
+        let dir = tempfile::tempdir().unwrap();
+        let ledger = make_ledger();
+        let exporter = CostExporter::new(&ledger);
+        let filename = exporter
+            .export_to_dir(dir.path(), ExportFormat::Json)
+            .unwrap();
+        let content = std::fs::read_to_string(dir.path().join(&filename)).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert!(parsed.is_array());
+        assert_eq!(parsed.as_array().unwrap().len(), 2);
     }
 
     #[test]
     fn test_cost_exporter_empty_ledger() {
-        with_temp_dir(|_dir| {
-            let ledger = CostLedger::new();
-            let exporter = CostExporter::new(&ledger);
-            let _filename = exporter.export_csv().unwrap();
-        });
+        let dir = tempfile::tempdir().unwrap();
+        let ledger = CostLedger::new();
+        let exporter = CostExporter::new(&ledger);
+        let filename = exporter
+            .export_to_dir(dir.path(), ExportFormat::Csv)
+            .unwrap();
+        assert!(dir.path().join(&filename).exists());
     }
 }
