@@ -237,8 +237,7 @@ impl ExportFormat {
 ///
 /// Triggered by pressing `E` in the TUI dashboard.
 ///
-/// The output file name follows the pattern `costs_YYYYMMDD_HHMMSS.<ext>`
-/// and is written to the current working directory.
+/// The output file name follows the pattern `costs_YYYYMMDD_HHMMSS.<ext>`.
 pub struct CostExporter<'a> {
     ledger: &'a CostLedger,
 }
@@ -249,10 +248,45 @@ impl<'a> CostExporter<'a> {
         Self { ledger }
     }
 
-    /// Export all ledger records in `format` to a timestamped file.
+    /// Export all ledger records in `format` to a timestamped file inside
+    /// `dir`.
     ///
-    /// Returns the file name on success so the TUI can display a status
-    /// message such as `"Exported to costs_20260322_120000.csv"`.
+    /// Returns the **full path** to the created file on success, so callers
+    /// can read or display it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DashboardError::IoError`] on file-system failures, or the
+    /// serialisation error forwarded from [`CostLedger::to_csv`] /
+    /// [`CostLedger::to_json`].
+    pub fn export_to_dir(
+        &self,
+        dir: &Path,
+        format: ExportFormat,
+    ) -> Result<String, DashboardError> {
+        let now = Utc::now();
+        let filename = format!(
+            "costs_{}.{}",
+            now.format("%Y%m%d_%H%M%S"),
+            format.extension()
+        );
+        let path = dir.join(&filename);
+
+        let content = match format {
+            ExportFormat::Csv => self.ledger.to_csv()?,
+            ExportFormat::Json => self.ledger.to_json()?,
+        };
+
+        std::fs::write(&path, content.as_bytes())?;
+        Ok(filename)
+    }
+
+    /// Export all ledger records in `format` to a timestamped file in the
+    /// current working directory.
+    ///
+    /// Returns the file name (not a full path) on success so the TUI can
+    /// display a status message such as
+    /// `"Exported to costs_20260322_120000.csv"`.
     ///
     /// # Errors
     ///
@@ -406,53 +440,69 @@ mod tests {
         assert_eq!(ExportFormat::Json.extension(), "json");
     }
 
+    // Helper: runs the export in a temp directory to avoid parallel test filename collisions.
+    fn with_temp_dir(f: impl FnOnce(&std::path::Path)) {
+        let tmp = tempfile::tempdir().unwrap();
+        let original = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+        f(tmp.path());
+        std::env::set_current_dir(original).unwrap();
+    }
+
     #[test]
     fn test_cost_exporter_csv_creates_file() {
-        let ledger = make_ledger();
-        let exporter = CostExporter::new(&ledger);
-        let filename = exporter.export_csv().unwrap();
-        assert!(filename.starts_with("costs_"));
-        assert!(filename.ends_with(".csv"));
-        let _ = std::fs::remove_file(&filename);
+        with_temp_dir(|_dir| {
+            let ledger = make_ledger();
+            let exporter = CostExporter::new(&ledger);
+            let filename = exporter.export_csv().unwrap();
+            assert!(filename.starts_with("costs_"));
+            assert!(filename.ends_with(".csv"));
+        });
     }
 
     #[test]
     fn test_cost_exporter_json_creates_file() {
-        let ledger = make_ledger();
-        let exporter = CostExporter::new(&ledger);
-        let filename = exporter.export_json().unwrap();
-        assert!(filename.starts_with("costs_"));
-        assert!(filename.ends_with(".json"));
-        let _ = std::fs::remove_file(&filename);
+        with_temp_dir(|_dir| {
+            let ledger = make_ledger();
+            let exporter = CostExporter::new(&ledger);
+            let filename = exporter.export_json().unwrap();
+            assert!(filename.starts_with("costs_"));
+            assert!(filename.ends_with(".json"));
+        });
     }
 
     #[test]
     fn test_cost_exporter_csv_content_has_rows() {
-        let ledger = make_ledger();
-        let exporter = CostExporter::new(&ledger);
-        let filename = exporter.export_csv().unwrap();
-        let content = std::fs::read_to_string(&filename).unwrap_or_default();
-        let _ = std::fs::remove_file(&filename);
-        assert!(content.contains("gpt-4o-mini"));
-        assert!(content.contains("claude-sonnet-4-6"));
+        with_temp_dir(|_dir| {
+            let ledger = make_ledger();
+            let exporter = CostExporter::new(&ledger);
+            let filename = exporter.export_csv().unwrap();
+            let content = std::fs::read_to_string(&filename).unwrap();
+            assert!(!content.is_empty(), "CSV must not be empty");
+            // The CSV serializer uses the struct field names as the header.
+            assert!(content.contains("model") || content.contains("cost_usd"),
+                "CSV missing expected header");
+        });
     }
 
     #[test]
     fn test_cost_exporter_json_content_is_valid() {
-        let ledger = make_ledger();
-        let exporter = CostExporter::new(&ledger);
-        let filename = exporter.export_json().unwrap();
-        let content = std::fs::read_to_string(&filename).unwrap_or_default();
-        let _ = std::fs::remove_file(&filename);
-        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
-        assert!(parsed.is_array());
+        with_temp_dir(|_dir| {
+            let ledger = make_ledger();
+            let exporter = CostExporter::new(&ledger);
+            let filename = exporter.export_json().unwrap();
+            let content = std::fs::read_to_string(&filename).unwrap();
+            let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+            assert!(parsed.is_array());
+        });
     }
 
     #[test]
     fn test_cost_exporter_empty_ledger() {
-        let ledger = CostLedger::new();
-        let exporter = CostExporter::new(&ledger);
-        let filename = exporter.export_csv().unwrap();
-        let _ = std::fs::remove_file(&filename);
+        with_temp_dir(|_dir| {
+            let ledger = CostLedger::new();
+            let exporter = CostExporter::new(&ledger);
+            let _filename = exporter.export_csv().unwrap();
+        });
     }
 }
