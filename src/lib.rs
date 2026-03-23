@@ -121,3 +121,5 @@ pub mod price_tracker;
 pub mod efficiency_analyzer;
 pub mod model_lifecycle;
 pub mod roi_calculator;
+pub mod experiment_tracker;
+pub mod cost_governance;
