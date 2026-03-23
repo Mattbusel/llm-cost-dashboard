@@ -162,6 +162,38 @@ fn main() {
         }
     }
 
+    // Handle --export-csv: write CSV to the given path and exit (no TUI).
+    if let Some(ref path) = cli.export_csv {
+        info!(path = %path.display(), "exporting CSV and exiting");
+        match export_csv(&app.ledger, path) {
+            Ok(()) => {
+                println!("Exported {} records to {}", app.ledger.len(), path.display());
+                return;
+            }
+            Err(e) => {
+                error!(error = %e, "CSV export failed");
+                eprintln!("Export error: {e}");
+                std::process::exit(1);
+            }
+        }
+    }
+
+    // Handle --export-json: write JSON to the given path and exit (no TUI).
+    if let Some(ref path) = cli.export_json {
+        info!(path = %path.display(), "exporting JSON and exiting");
+        match export_json(&app.ledger, path) {
+            Ok(()) => {
+                println!("Exported {} records to {}", app.ledger.len(), path.display());
+                return;
+            }
+            Err(e) => {
+                error!(error = %e, "JSON export failed");
+                eprintln!("Export error: {e}");
+                std::process::exit(1);
+            }
+        }
+    }
+
     // If --serve was requested, wrap the ledger in Arc<Mutex<>> and spawn the
     // HTTP server as a background Tokio task, then run the TUI on the main thread.
     if let Some(port) = cli.serve {

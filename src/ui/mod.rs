@@ -21,7 +21,10 @@ use tracing::{debug, info, warn};
 
 use crate::{
     budget::BudgetEnvelope,
-    cost::{CostLedger, CostRecord},
+    cost::{
+        anomaly::{AnomalyDetector, CostAnomaly},
+        CostLedger, CostRecord,
+    },
     error::DashboardError,
     log::RequestLog,
     webhook::WebhookConfig,
@@ -46,6 +49,13 @@ pub struct App {
     pub webhooks: Vec<WebhookConfig>,
     /// Last export status message (shown briefly in the title bar).
     pub last_export_status: Option<String>,
+    /// Active session name.  When set, all newly ingested records are tagged
+    /// with this identifier (sets [`CostRecord::session_id`]).
+    pub current_session: Option<String>,
+    /// Rolling anomaly detector (per-model mean and std dev).
+    pub anomaly_detector: AnomalyDetector,
+    /// Ring buffer of the last 10 detected anomalies (oldest first).
+    pub anomalies: Vec<CostAnomaly>,
 }
 
 impl App {
@@ -62,7 +72,24 @@ impl App {
             running: true,
             webhooks: Vec::new(),
             last_export_status: None,
+            current_session: None,
+            anomaly_detector: AnomalyDetector::new(),
+            anomalies: Vec::new(),
         }
+    }
+
+    /// Set the active session name.
+    ///
+    /// All records ingested after this call (via [`App::ingest_line`] or
+    /// [`App::record`]) will have their `session_id` set to `session_name`.
+    /// Pass `None` to clear the active session.
+    pub fn set_session(&mut self, session_name: impl Into<String>) {
+        self.current_session = Some(session_name.into());
+    }
+
+    /// Clear the active session so newly ingested records are not tagged.
+    pub fn clear_session(&mut self) {
+        self.current_session = None;
     }
 
     /// Register a webhook configuration for budget-threshold alerts.
@@ -78,6 +105,24 @@ impl App {
     pub fn record(&mut self, record: CostRecord) {
         let cost = record.total_cost_usd;
         let model = record.model.clone();
+
+        // Run anomaly detection *before* adding to the ledger so the current
+        // sample is scored against the historical baseline, not itself.
+        if let Some(anomaly) = self.anomaly_detector.check(&record) {
+            info!(
+                model = %anomaly.model,
+                expected = anomaly.expected,
+                actual = anomaly.actual,
+                severity = %anomaly.severity,
+                "cost anomaly detected"
+            );
+            self.anomalies.push(anomaly);
+            // Keep at most 10 anomalies.
+            if self.anomalies.len() > 10 {
+                self.anomalies.remove(0);
+            }
+        }
+
         if let Err(e) = self.ledger.add(record) {
             warn!(error = %e, "cost ledger rejected record");
         }
@@ -167,13 +212,17 @@ impl App {
     pub fn ingest_line(&mut self, line: &str) -> Result<(), DashboardError> {
         self.log.ingest_line(line)?;
         if let Some(last) = self.log.all().last() {
-            let rec = CostRecord::new(
+            let mut rec = CostRecord::new(
                 &last.model,
                 &last.provider,
                 last.input_tokens,
                 last.output_tokens,
                 last.latency_ms,
             );
+            // Tag the record with the active session if one is set.
+            if let Some(ref session) = self.current_session {
+                rec = rec.with_session(session.clone());
+            }
             self.record(rec);
         }
         Ok(())
@@ -229,6 +278,8 @@ impl App {
         self.budget.reset();
         self.scroll_offset = 0;
         self.last_export_status = None;
+        self.anomaly_detector.reset();
+        self.anomalies.clear();
     }
 }
 
@@ -296,6 +347,8 @@ fn event_loop(
                     &app.budget,
                     app.scroll_offset,
                     app.last_export_status.as_deref(),
+                    &app.anomalies,
+                    app.current_session.as_deref(),
                 )
             })
             .map_err(|e| DashboardError::Terminal(e.to_string()))?;

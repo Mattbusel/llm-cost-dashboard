@@ -713,6 +713,118 @@ export PATH="$HOME/.cargo/bin:$PATH"
 
 ---
 
+## Cost Forecasting & Anomaly Detection
+
+The dashboard includes a real-time rolling-window spend forecaster built on linear
+regression, complementing the existing OLS month-end projector:
+
+| Feature | Description |
+|---------|-------------|
+| `TrendForecaster` | 24-hour rolling window, OLS slope → projected daily + monthly |
+| `TrendDirection` | `Up` / `Down` / `Flat` — arrow shown in the Forecast panel |
+| Anomaly detection | Flags requests where spend > mean + 2σ of the 24-hour window |
+| Budget breach ETA | Estimates time until monthly budget is hit at current rate |
+| `SeasonalAdjustment` | Hour-of-day × day-of-week multiplicative factor on forecasts |
+
+The **Forecast** panel is displayed in the TUI left column between the Budget gauge
+and the Cache Breakdown panel.
+
+```
+ Forecast
+ Proj/day:  $0.002341   ↑
+ Proj/mo:   $0.7023
+ Confidence:  62%
+ Anomaly: none
+```
+
+---
+
+## API Key Validation
+
+On startup, or on demand, the dashboard can validate your provider API keys against
+each provider's live model-list endpoint.  No credentials are stored.
+
+```rust
+use llm_cost_dashboard::validator::{MultiValidator, KeyConfig};
+
+let validator = MultiValidator::new(vec![
+    KeyConfig { provider: "anthropic".into(), key: std::env::var("ANTHROPIC_API_KEY").unwrap_or_default() },
+    KeyConfig { provider: "openai".into(),    key: std::env::var("OPENAI_API_KEY").unwrap_or_default() },
+    KeyConfig { provider: "google".into(),    key: std::env::var("GOOGLE_API_KEY").unwrap_or_default() },
+]);
+let results = validator.validate_all().await;
+for r in &results {
+    println!("{}", r.status_str());
+}
+```
+
+Requires the `webhooks` feature (enabled by default).  Validator per provider:
+
+| Provider | Endpoint | Auth method |
+|----------|----------|-------------|
+| Anthropic | `https://api.anthropic.com/v1/models` | `x-api-key` header |
+| OpenAI | `https://api.openai.com/v1/models` | `Authorization: Bearer` |
+| Google | `https://generativelanguage.googleapis.com/v1/models?key=` | Query param |
+
+---
+
+## Provider Auto-Detection
+
+When ingesting log lines, `LogEntry` can auto-detect the provider from HTTP
+response headers supplied alongside the record.  Call
+`entry.apply_header_detection(headers)` with an iterator of `(name, value)`
+pairs after parsing:
+
+```rust
+use llm_cost_dashboard::LogEntry;
+
+let mut entry = LogEntry::new("claude-sonnet-4-6", "unknown", 512, 256, 45);
+entry.apply_header_detection([
+    ("x-ratelimit-limit-tokens", "50000"),
+]);
+assert_eq!(entry.effective_provider(), "anthropic");
+```
+
+Detection rules applied in priority order:
+
+| Header | Provider |
+|--------|----------|
+| `x-ratelimit-limit-tokens` | Anthropic |
+| `x-goog-request-params` | Google / Gemini |
+| `x-request-id` (UUID-shaped) | OpenAI |
+
+The detected provider is stored in `LogEntry::detected_provider` and
+automatically upgrades `provider` from `"unknown"` when a match is found.
+
+---
+
+## Data Export
+
+Press **`e`** in the TUI to export the current session's cost data to disk.
+Two timestamped files are written to the current working directory:
+
+```
+llm-costs-20260322-120000.json
+llm-costs-20260322-120000.csv
+```
+
+You can also call the export API directly:
+
+```rust
+use llm_cost_dashboard::export::{CostExporter, ExportFormat};
+use llm_cost_dashboard::CostLedger;
+
+let ledger = CostLedger::new();
+let exporter = CostExporter::new(&ledger);
+let filename = exporter.export(ExportFormat::Csv).unwrap();
+println!("Exported to {filename}");
+```
+
+The `export` module also provides lower-level path-based helpers:
+`export_csv`, `export_json`, and `export_summary_json`.
+
+---
+
 ## Related projects by @Mattbusel
 
 - [tokio-prompt-orchestrator](https://github.com/Mattbusel/tokio-prompt-orchestrator) -- Rust async LLM pipeline orchestration

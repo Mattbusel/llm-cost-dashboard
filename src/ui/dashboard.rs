@@ -13,36 +13,43 @@ use ratatui::{
 };
 
 use crate::budget::BudgetEnvelope;
-use crate::cost::CostLedger;
+use crate::cost::{anomaly::CostAnomaly, CostLedger};
 use crate::forecast::{ForecastResult, SpendForecaster, Trend};
 use crate::ui::{theme::Theme, widgets};
 
 /// Full dashboard rendering — called on every tick.
 ///
-/// `export_status` is an optional short message shown in the title bar after
-/// the user presses `e` to export session data.
+/// # Parameters
+///
+/// - `export_status`: optional short message shown in the title bar after the
+///   user presses `e` to export session data.
+/// - `anomalies`: slice of the last 10 detected cost anomalies (oldest first).
+/// - `current_session`: active session name, shown in the title bar when set.
 pub fn render(
     frame: &mut Frame,
     ledger: &CostLedger,
     budget: &BudgetEnvelope,
     scroll_offset: usize,
     export_status: Option<&str>,
+    anomalies: &[CostAnomaly],
+    current_session: Option<&str>,
 ) {
     let area = frame.area();
 
-    // Outer layout: title bar + main + trend + sparkline + help bar
+    // Outer layout: title bar + main + anomalies + trend + sparkline + help bar
     let outer = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1), // title bar
             Constraint::Min(10),   // main content
+            Constraint::Length(5), // anomaly panel (shown when anomalies exist)
             Constraint::Length(5), // 7-day trend panel
             Constraint::Length(3), // per-request sparkline
             Constraint::Length(1), // help bar
         ])
         .split(area);
 
-    render_title(frame, outer[0], export_status);
+    render_title(frame, outer[0], export_status, current_session);
 
     // Main content: left col + right col
     let main = Layout::default()
@@ -77,17 +84,25 @@ pub fn render(
     render_model_chart(frame, right[0], ledger);
     render_requests_table(frame, right[1], ledger, scroll_offset);
 
+    // Anomaly panel
+    render_anomalies(frame, outer[2], anomalies);
+
     // 7-day trend panel
-    render_trend(frame, outer[2], ledger);
+    render_trend(frame, outer[3], ledger);
 
     // Per-request sparkline
     let spark_data = ledger.sparkline_data(60);
-    widgets::render_sparkline(frame, outer[3], &spark_data);
+    widgets::render_sparkline(frame, outer[4], &spark_data);
 
-    render_help(frame, outer[4]);
+    render_help(frame, outer[5]);
 }
 
-fn render_title(frame: &mut Frame, area: ratatui::layout::Rect, export_status: Option<&str>) {
+fn render_title(
+    frame: &mut Frame,
+    area: ratatui::layout::Rect,
+    export_status: Option<&str>,
+    current_session: Option<&str>,
+) {
     let mut spans = vec![
         Span::styled(" LLM Cost Dashboard", Theme::title()),
         Span::styled(
@@ -95,6 +110,12 @@ fn render_title(frame: &mut Frame, area: ratatui::layout::Rect, export_status: O
             Theme::dim(),
         ),
     ];
+    if let Some(session) = current_session {
+        spans.push(Span::styled(
+            format!("  [session: {session}]"),
+            Theme::warn(),
+        ));
+    }
     if let Some(status) = export_status {
         spans.push(Span::styled(format!("  Exported: {status}"), Theme::ok()));
     }
