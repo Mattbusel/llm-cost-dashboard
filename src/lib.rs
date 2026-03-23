@@ -143,3 +143,4 @@ pub mod capacity_planner;
 pub mod sla_monitor;
 pub mod cohort_analyzer;
 pub mod savings_calculator;
+pub mod multi_tenant;

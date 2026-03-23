@@ -349,6 +349,382 @@ fn is_leap(y: u64) -> bool {
     (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0)
 }
 
+// ── New billing types (Round 29) ──────────────────────────────────────────────
+
+use std::sync::Mutex;
+
+/// A single line item on a new-style invoice.
+#[derive(Debug, Clone)]
+pub struct LineItem {
+    /// Human-readable description.
+    pub description: String,
+    /// Quantity (e.g. number of 1k-token blocks).
+    pub quantity: f64,
+    /// Price per unit in USD.
+    pub unit_price_usd: f64,
+    /// Model this line item is billed for.
+    pub model: String,
+    /// Billing period start (Unix epoch seconds).
+    pub period_start: u64,
+    /// Billing period end (Unix epoch seconds).
+    pub period_end: u64,
+}
+
+impl LineItem {
+    /// Compute the total cost for this line item.
+    pub fn total(&self) -> f64 {
+        self.quantity * self.unit_price_usd
+    }
+}
+
+/// A tax rate definition.
+#[derive(Debug, Clone)]
+pub struct TaxRate {
+    /// Tax name (e.g. "VAT").
+    pub name: String,
+    /// Tax percentage (e.g. 20.0 for 20%).
+    pub rate_pct: f64,
+    /// Jurisdiction (e.g. "EU", "US-CA").
+    pub jurisdiction: String,
+}
+
+/// Status of a new-style invoice.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NewInvoiceStatus {
+    /// Not yet sent.
+    Draft,
+    /// Sent to customer.
+    Issued,
+    /// Payment received.
+    Paid,
+    /// Payment overdue.
+    Overdue,
+    /// Invoice cancelled.
+    Voided,
+}
+
+impl std::fmt::Display for NewInvoiceStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Self::Draft => "Draft",
+            Self::Issued => "Issued",
+            Self::Paid => "Paid",
+            Self::Overdue => "Overdue",
+            Self::Voided => "Voided",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+/// A rich invoice with builder-pattern support.
+#[derive(Debug, Clone)]
+pub struct NewInvoice {
+    /// Unique invoice identifier.
+    pub invoice_id: String,
+    /// Customer identifier.
+    pub customer_id: String,
+    /// Customer display name.
+    pub customer_name: String,
+    /// When the invoice was issued (Unix epoch seconds).
+    pub issued_at_unix: u64,
+    /// Payment due date (Unix epoch seconds).
+    pub due_at_unix: u64,
+    /// Line items.
+    pub line_items: Vec<LineItem>,
+    /// Sum of line item totals.
+    pub subtotal: f64,
+    /// Tax amount.
+    pub tax_amount: f64,
+    /// Total amount due.
+    pub total_usd: f64,
+    /// Currency code (e.g. "USD").
+    pub currency: String,
+    /// Current status.
+    pub status: NewInvoiceStatus,
+    /// Free-form notes.
+    pub notes: String,
+}
+
+/// Builder for [`NewInvoice`].
+pub struct InvoiceBuilder {
+    customer_id: String,
+    customer_name: String,
+    line_items: Vec<LineItem>,
+    tax: Option<TaxRate>,
+    discount_pct: f64,
+    due_days: u32,
+    notes: String,
+}
+
+impl InvoiceBuilder {
+    /// Start building an invoice for a customer.
+    pub fn new(customer_id: &str, customer_name: &str) -> Self {
+        Self {
+            customer_id: customer_id.to_string(),
+            customer_name: customer_name.to_string(),
+            line_items: Vec::new(),
+            tax: None,
+            discount_pct: 0.0,
+            due_days: 30,
+            notes: String::new(),
+        }
+    }
+
+    /// Add a line item.
+    pub fn add_line_item(&mut self, item: LineItem) -> &mut Self {
+        self.line_items.push(item);
+        self
+    }
+
+    /// Apply a tax rate.
+    pub fn apply_tax(&mut self, tax: TaxRate) -> &mut Self {
+        self.tax = Some(tax);
+        self
+    }
+
+    /// Apply a percentage discount (0.0–100.0).
+    pub fn apply_discount(&mut self, discount_pct: f64) -> &mut Self {
+        self.discount_pct = discount_pct;
+        self
+    }
+
+    /// Set the payment due window in days from issuance.
+    pub fn set_due_days(&mut self, days: u32) -> &mut Self {
+        self.due_days = days;
+        self
+    }
+
+    /// Finalise and produce a [`NewInvoice`].
+    pub fn build(self) -> NewInvoice {
+        let subtotal_raw: f64 = self.line_items.iter().map(|li| li.total()).sum();
+        let discount_amount = subtotal_raw * self.discount_pct / 100.0;
+        let subtotal = subtotal_raw - discount_amount;
+        let tax_amount = self
+            .tax
+            .as_ref()
+            .map(|t| subtotal * t.rate_pct / 100.0)
+            .unwrap_or(0.0);
+        let total_usd = subtotal + tax_amount;
+        // Use a simple counter as a proxy for "now".
+        let issued_at_unix = 0u64;
+        let due_at_unix = issued_at_unix + self.due_days as u64 * 86_400;
+        let invoice_id = format!("INV-{}-{}", self.customer_id, issued_at_unix);
+        NewInvoice {
+            invoice_id,
+            customer_id: self.customer_id,
+            customer_name: self.customer_name,
+            issued_at_unix,
+            due_at_unix,
+            line_items: self.line_items,
+            subtotal,
+            tax_amount,
+            total_usd,
+            currency: "USD".to_string(),
+            status: NewInvoiceStatus::Draft,
+            notes: self.notes,
+        }
+    }
+}
+
+/// Summary of revenue across a time range.
+#[derive(Debug, Clone)]
+pub struct RevenueSummary {
+    /// Total revenue in USD.
+    pub total_revenue: f64,
+    /// Number of invoices in the range.
+    pub invoice_count: usize,
+    /// Number of paid invoices.
+    pub paid_count: usize,
+    /// Number of overdue invoices.
+    pub overdue_count: usize,
+    /// Average invoice value in USD.
+    pub avg_invoice_usd: f64,
+    /// Top customers by revenue `(customer_id, total_usd)`.
+    pub top_customers: Vec<(String, f64)>,
+}
+
+/// Instance-based invoice generator with persistent storage.
+pub struct NewInvoiceGenerator {
+    store: Mutex<Vec<NewInvoice>>,
+}
+
+impl Default for NewInvoiceGenerator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl NewInvoiceGenerator {
+    /// Create a new generator.
+    pub fn new() -> Self {
+        Self {
+            store: Mutex::new(Vec::new()),
+        }
+    }
+
+    /// Generate an invoice from raw usage records `(model, cost, tokens)`.
+    pub fn generate_from_usage(
+        &self,
+        customer_id: &str,
+        customer_name: &str,
+        usage_records: &[(String, f64, usize)],
+        period_days: u32,
+    ) -> NewInvoice {
+        let mut builder = InvoiceBuilder::new(customer_id, customer_name);
+        let period_end = period_days as u64 * 86_400;
+        for (model, cost, tokens) in usage_records {
+            let quantity = *tokens as f64 / 1000.0;
+            let unit_price = if quantity > 0.0 { cost / quantity } else { 0.0 };
+            builder.add_line_item(LineItem {
+                description: format!("{} usage ({} tokens)", model, tokens),
+                quantity,
+                unit_price_usd: unit_price,
+                model: model.clone(),
+                period_start: 0,
+                period_end,
+            });
+        }
+        builder.build()
+    }
+
+    /// Render a plain-text invoice.
+    pub fn render_text(&self, invoice: &NewInvoice) -> String {
+        let mut out = String::new();
+        out.push_str("=======================================================\n");
+        out.push_str(&format!("INVOICE  {}\n", invoice.invoice_id));
+        out.push_str("=======================================================\n");
+        out.push_str(&format!("Customer : {} ({})\n", invoice.customer_name, invoice.customer_id));
+        out.push_str(&format!("Currency : {}\n", invoice.currency));
+        out.push_str(&format!("Status   : {}\n", invoice.status));
+        if !invoice.notes.is_empty() {
+            out.push_str(&format!("Notes    : {}\n", invoice.notes));
+        }
+        out.push_str("-------------------------------------------------------\n");
+        out.push_str(&format!("{:<30} {:>10} {:>12}\n", "Description", "Qty", "Total"));
+        out.push_str("-------------------------------------------------------\n");
+        for li in &invoice.line_items {
+            out.push_str(&format!(
+                "{:<30} {:>10.2} {:>12.6}\n",
+                li.description,
+                li.quantity,
+                li.total()
+            ));
+        }
+        out.push_str("-------------------------------------------------------\n");
+        out.push_str(&format!("{:>54.6} (subtotal)\n", invoice.subtotal));
+        out.push_str(&format!("{:>54.6} (tax)\n", invoice.tax_amount));
+        out.push_str("=======================================================\n");
+        out.push_str(&format!("TOTAL DUE: ${:.6}\n", invoice.total_usd));
+        out.push_str("=======================================================\n");
+        out
+    }
+
+    /// Render an invoice's line items as CSV.
+    pub fn render_csv(&self, invoice: &NewInvoice) -> String {
+        let mut out = String::new();
+        out.push_str("invoice_id,customer_id,model,description,quantity,unit_price_usd,total_usd\n");
+        for li in &invoice.line_items {
+            out.push_str(&format!(
+                "{},{},{},{},{:.4},{:.6},{:.6}\n",
+                invoice.invoice_id,
+                invoice.customer_id,
+                li.model,
+                li.description,
+                li.quantity,
+                li.unit_price_usd,
+                li.total(),
+            ));
+        }
+        out
+    }
+
+    /// Persist an invoice in the internal store.
+    pub fn store(&self, invoice: NewInvoice) {
+        if let Ok(mut guard) = self.store.lock() {
+            guard.push(invoice);
+        }
+    }
+
+    /// Retrieve an invoice by ID.
+    pub fn get_invoice(&self, invoice_id: &str) -> Option<NewInvoice> {
+        self.store
+            .lock()
+            .ok()?
+            .iter()
+            .find(|inv| inv.invoice_id == invoice_id)
+            .cloned()
+    }
+
+    /// Return all invoices that are overdue (status == Overdue and due_at_unix < current_time).
+    pub fn overdue_invoices(&self, current_time: u64) -> Vec<NewInvoice> {
+        match self.store.lock() {
+            Ok(guard) => guard
+                .iter()
+                .filter(|inv| {
+                    inv.status == NewInvoiceStatus::Overdue && inv.due_at_unix < current_time
+                })
+                .cloned()
+                .collect(),
+            Err(_) => vec![],
+        }
+    }
+
+    /// Summarise revenue for invoices issued within `[from, to]` Unix epoch seconds.
+    pub fn revenue_summary(&self, from: u64, to: u64) -> RevenueSummary {
+        let guard = match self.store.lock() {
+            Ok(g) => g,
+            Err(_) => {
+                return RevenueSummary {
+                    total_revenue: 0.0,
+                    invoice_count: 0,
+                    paid_count: 0,
+                    overdue_count: 0,
+                    avg_invoice_usd: 0.0,
+                    top_customers: vec![],
+                }
+            }
+        };
+        let in_range: Vec<&NewInvoice> = guard
+            .iter()
+            .filter(|inv| inv.issued_at_unix >= from && inv.issued_at_unix <= to)
+            .collect();
+
+        let invoice_count = in_range.len();
+        let total_revenue: f64 = in_range.iter().map(|inv| inv.total_usd).sum();
+        let paid_count = in_range
+            .iter()
+            .filter(|inv| inv.status == NewInvoiceStatus::Paid)
+            .count();
+        let overdue_count = in_range
+            .iter()
+            .filter(|inv| inv.status == NewInvoiceStatus::Overdue)
+            .count();
+        let avg_invoice_usd = if invoice_count > 0 {
+            total_revenue / invoice_count as f64
+        } else {
+            0.0
+        };
+
+        // Aggregate by customer.
+        let mut customer_totals: HashMap<String, f64> = HashMap::new();
+        for inv in &in_range {
+            *customer_totals.entry(inv.customer_id.clone()).or_insert(0.0) += inv.total_usd;
+        }
+        let mut top_customers: Vec<(String, f64)> = customer_totals.into_iter().collect();
+        top_customers.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        top_customers.truncate(10);
+
+        RevenueSummary {
+            total_revenue,
+            invoice_count,
+            paid_count,
+            overdue_count,
+            avg_invoice_usd,
+            top_customers,
+        }
+    }
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
