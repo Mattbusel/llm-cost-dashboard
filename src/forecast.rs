@@ -543,6 +543,564 @@ impl CostForecaster {
     }
 }
 
+// ---------------------------------------------------------------------------
+// New exponential-smoothing forecast engine
+// ---------------------------------------------------------------------------
+
+/// Selects which exponential-smoothing algorithm to use when fitting a
+/// [`EsCostForecaster`].
+#[derive(Debug, Clone)]
+pub enum ForecastMethod {
+    /// Simple (single) exponential smoothing with smoothing factor `alpha`.
+    SimpleExponential {
+        /// Level smoothing factor (`0 < alpha < 1`).
+        alpha: f64,
+    },
+    /// Double (Holt's linear) exponential smoothing.
+    DoubleExponential {
+        /// Level smoothing factor.
+        alpha: f64,
+        /// Trend smoothing factor.
+        beta: f64,
+    },
+    /// Holt-Winters triple exponential smoothing with multiplicative seasonality.
+    HoltWinters {
+        /// Level smoothing factor.
+        alpha: f64,
+        /// Trend smoothing factor.
+        beta: f64,
+        /// Seasonal smoothing factor.
+        gamma: f64,
+        /// Number of periods per season (e.g. 7 for weekly, 24 for hourly).
+        period: usize,
+    },
+}
+
+// ---------------------------------------------------------------------------
+// SimpleEsModel
+// ---------------------------------------------------------------------------
+
+/// Simple (single) exponential smoothing model.
+///
+/// Maintains a single level estimate; suitable for series without trend or
+/// seasonality.
+#[derive(Debug, Clone)]
+pub struct SimpleEsModel {
+    /// Level smoothing coefficient.
+    pub alpha: f64,
+    /// Current level estimate.
+    pub level: f64,
+}
+
+impl SimpleEsModel {
+    /// Create a model with an initial level of `0.0`.
+    pub fn new(alpha: f64) -> Self {
+        Self {
+            alpha: alpha.clamp(f64::EPSILON, 1.0 - f64::EPSILON),
+            level: 0.0,
+        }
+    }
+
+    /// Update the level with a new observed value.
+    pub fn update(&mut self, value: f64) {
+        self.level = self.alpha * value + (1.0 - self.alpha) * self.level;
+    }
+
+    /// Forecast `steps` periods ahead (all identical for simple ES).
+    pub fn forecast(&self, steps: usize) -> Vec<f64> {
+        vec![self.level; steps]
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DoubleEsModel
+// ---------------------------------------------------------------------------
+
+/// Double (Holt's linear) exponential smoothing model.
+///
+/// Tracks both a level and a trend component, allowing it to project series
+/// that exhibit a linear drift.
+#[derive(Debug, Clone)]
+pub struct DoubleEsModel {
+    /// Level smoothing coefficient.
+    pub alpha: f64,
+    /// Trend smoothing coefficient.
+    pub beta: f64,
+    /// Current level estimate.
+    pub level: f64,
+    /// Current trend estimate.
+    pub trend: f64,
+}
+
+impl DoubleEsModel {
+    /// Create a model with level and trend initialised to `0.0`.
+    pub fn new(alpha: f64, beta: f64) -> Self {
+        Self {
+            alpha: alpha.clamp(f64::EPSILON, 1.0 - f64::EPSILON),
+            beta: beta.clamp(f64::EPSILON, 1.0 - f64::EPSILON),
+            level: 0.0,
+            trend: 0.0,
+        }
+    }
+
+    /// Update the model with a new observed value.
+    pub fn update(&mut self, value: f64) {
+        let prev_level = self.level;
+        let prev_trend = self.trend;
+        self.level = self.alpha * value + (1.0 - self.alpha) * (prev_level + prev_trend);
+        self.trend = self.beta * (self.level - prev_level) + (1.0 - self.beta) * prev_trend;
+    }
+
+    /// Forecast `steps` periods ahead using `level + h * trend`.
+    pub fn forecast(&self, steps: usize) -> Vec<f64> {
+        (1..=steps)
+            .map(|h| self.level + h as f64 * self.trend)
+            .collect()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// HoltWintersModel
+// ---------------------------------------------------------------------------
+
+/// Holt-Winters triple exponential smoothing with **multiplicative** seasonality.
+///
+/// Suitable for series that have both a trend and a repeating seasonal pattern
+/// whose amplitude scales with the level.
+#[derive(Debug, Clone)]
+pub struct HoltWintersModel {
+    /// Level smoothing coefficient.
+    pub alpha: f64,
+    /// Trend smoothing coefficient.
+    pub beta: f64,
+    /// Seasonal smoothing coefficient.
+    pub gamma: f64,
+    /// Season length in periods.
+    pub period: usize,
+    /// Current level.
+    pub level: f64,
+    /// Current trend.
+    pub trend: f64,
+    /// Seasonal indices (length == `period`).
+    pub seasonal: Vec<f64>,
+}
+
+impl HoltWintersModel {
+    /// Create a model with the given parameters.
+    ///
+    /// `seasonal` must have length `period`; if it is empty or shorter it is
+    /// padded with `1.0` (neutral multiplicative factor).
+    pub fn new(alpha: f64, beta: f64, gamma: f64, period: usize, seasonal: Vec<f64>) -> Self {
+        let p = period.max(1);
+        let mut s = seasonal;
+        s.resize(p, 1.0);
+        Self {
+            alpha: alpha.clamp(f64::EPSILON, 1.0 - f64::EPSILON),
+            beta: beta.clamp(f64::EPSILON, 1.0 - f64::EPSILON),
+            gamma: gamma.clamp(f64::EPSILON, 1.0 - f64::EPSILON),
+            period: p,
+            level: 0.0,
+            trend: 0.0,
+            seasonal: s,
+        }
+    }
+
+    /// Update the model with a new observed value at position `t` (0-based).
+    ///
+    /// `t` is used to index into the seasonal component.
+    pub fn update(&mut self, value: f64, t: usize) {
+        let s_idx = t % self.period;
+        let seasonal_t = self.seasonal[s_idx];
+        let prev_level = self.level;
+        let prev_trend = self.trend;
+
+        // Guard against division by zero.
+        let denom = if seasonal_t.abs() < f64::EPSILON { 1.0 } else { seasonal_t };
+
+        self.level = self.alpha * (value / denom)
+            + (1.0 - self.alpha) * (prev_level + prev_trend);
+        self.trend = self.beta * (self.level - prev_level)
+            + (1.0 - self.beta) * prev_trend;
+        self.seasonal[s_idx] = self.gamma * (value / self.level.max(f64::EPSILON))
+            + (1.0 - self.gamma) * seasonal_t;
+    }
+
+    /// Forecast `steps` periods ahead (multiplicative seasonality).
+    ///
+    /// `current_t` is the 0-based index of the last observed period.
+    pub fn forecast(&self, steps: usize, current_t: usize) -> Vec<f64> {
+        (1..=steps)
+            .map(|h| {
+                let s_idx = (current_t + h) % self.period;
+                (self.level + h as f64 * self.trend) * self.seasonal[s_idx]
+            })
+            .collect()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// EsCostForecaster
+// ---------------------------------------------------------------------------
+
+/// Cost forecaster built on top of [`SimpleEsModel`], [`DoubleEsModel`], or
+/// [`HoltWintersModel`].
+///
+/// Constructed via [`EsCostForecaster::fit`], which initialises and trains the
+/// chosen model on historical cost data in a single call.
+pub struct EsCostForecaster {
+    /// Fitted forecasts one-step-ahead for each training observation.
+    #[allow(dead_code)]
+    fitted: Vec<f64>,
+    /// Residuals (observed − fitted) for each training observation.
+    residuals: Vec<f64>,
+    /// Original observations used for training.
+    observations: Vec<f64>,
+    /// Internal state for stepping ahead at forecast time.
+    inner: EsInner,
+    /// Length of training data (for Holt-Winters `current_t`).
+    trained_len: usize,
+}
+
+/// Internal model state after training.
+#[derive(Clone)]
+enum EsInner {
+    Simple(SimpleEsModel),
+    Double(DoubleEsModel),
+    HoltWinters(HoltWintersModel),
+}
+
+impl EsCostForecaster {
+    /// Fit a forecaster to `historical_costs` using `method`.
+    ///
+    /// At least one observation is required; an empty slice produces a
+    /// forecaster that returns `0.0` for all future steps.
+    pub fn fit(historical_costs: &[f64], method: ForecastMethod) -> Self {
+        if historical_costs.is_empty() {
+            return Self {
+                fitted: Vec::new(),
+                residuals: Vec::new(),
+                observations: Vec::new(),
+                inner: EsInner::Simple(SimpleEsModel::new(0.3)),
+                trained_len: 0,
+            };
+        }
+
+        match method {
+            ForecastMethod::SimpleExponential { alpha } => {
+                Self::fit_simple(historical_costs, alpha)
+            }
+            ForecastMethod::DoubleExponential { alpha, beta } => {
+                Self::fit_double(historical_costs, alpha, beta)
+            }
+            ForecastMethod::HoltWinters { alpha, beta, gamma, period } => {
+                Self::fit_hw(historical_costs, alpha, beta, gamma, period)
+            }
+        }
+    }
+
+    fn fit_simple(data: &[f64], alpha: f64) -> Self {
+        let mut model = SimpleEsModel::new(alpha);
+        model.level = data[0];
+        let mut fitted = Vec::with_capacity(data.len());
+        let mut residuals = Vec::with_capacity(data.len());
+
+        for &y in data {
+            let f = model.level;
+            fitted.push(f);
+            residuals.push(y - f);
+            model.update(y);
+        }
+
+        Self {
+            fitted,
+            residuals,
+            observations: data.to_vec(),
+            inner: EsInner::Simple(model),
+            trained_len: data.len(),
+        }
+    }
+
+    fn fit_double(data: &[f64], alpha: f64, beta: f64) -> Self {
+        let mut model = DoubleEsModel::new(alpha, beta);
+        model.level = data[0];
+        model.trend = if data.len() >= 2 { data[1] - data[0] } else { 0.0 };
+
+        let mut fitted = Vec::with_capacity(data.len());
+        let mut residuals = Vec::with_capacity(data.len());
+
+        for &y in data {
+            let f = model.level + model.trend;
+            fitted.push(f);
+            residuals.push(y - f);
+            model.update(y);
+        }
+
+        Self {
+            fitted,
+            residuals,
+            observations: data.to_vec(),
+            inner: EsInner::Double(model),
+            trained_len: data.len(),
+        }
+    }
+
+    fn fit_hw(data: &[f64], alpha: f64, beta: f64, gamma: f64, period: usize) -> Self {
+        let p = period.max(1);
+
+        // Initialise seasonal indices from the first season.
+        let season_len = p.min(data.len());
+        let season_mean: f64 = data[..season_len].iter().sum::<f64>() / season_len as f64;
+        let initial_seasonal: Vec<f64> = data[..season_len]
+            .iter()
+            .map(|&v| {
+                if season_mean.abs() < f64::EPSILON { 1.0 } else { v / season_mean }
+            })
+            .collect();
+
+        let mut model = HoltWintersModel::new(alpha, beta, gamma, p, initial_seasonal);
+        model.level = season_mean.max(f64::EPSILON);
+        model.trend = 0.0;
+
+        let mut fitted = Vec::with_capacity(data.len());
+        let mut residuals = Vec::with_capacity(data.len());
+
+        for (t, &y) in data.iter().enumerate() {
+            let s_idx = t % model.period;
+            let f = (model.level + model.trend) * model.seasonal[s_idx];
+            fitted.push(f);
+            residuals.push(y - f);
+            model.update(y, t);
+        }
+
+        Self {
+            fitted,
+            residuals,
+            observations: data.to_vec(),
+            inner: EsInner::HoltWinters(model),
+            trained_len: data.len(),
+        }
+    }
+
+    /// Project `steps` periods ahead from the end of training data.
+    pub fn forecast(&self, steps: usize) -> Vec<f64> {
+        if steps == 0 {
+            return Vec::new();
+        }
+        match &self.inner {
+            EsInner::Simple(m) => m.forecast(steps),
+            EsInner::Double(m) => m.forecast(steps),
+            EsInner::HoltWinters(m) => m.forecast(steps, self.trained_len.saturating_sub(1)),
+        }
+    }
+
+    /// Approximate `(lower, upper)` prediction intervals for each forecast step.
+    ///
+    /// `z` is the z-score for the desired confidence level (e.g. `1.96` for
+    /// ~95 %, `1.28` for ~80 %).
+    pub fn confidence_interval(&self, steps: usize, z: f64) -> Vec<(f64, f64)> {
+        let point = self.forecast(steps);
+        let std = self.residual_std();
+        point
+            .into_iter()
+            .enumerate()
+            .map(|(i, p)| {
+                // Uncertainty grows with horizon (sqrt scaling).
+                let margin = z * std * ((i + 1) as f64).sqrt();
+                ((p - margin).max(0.0), p + margin)
+            })
+            .collect()
+    }
+
+    /// Mean absolute error on the training data.
+    pub fn mae(&self) -> f64 {
+        if self.residuals.is_empty() {
+            return 0.0;
+        }
+        self.residuals.iter().map(|r| r.abs()).sum::<f64>() / self.residuals.len() as f64
+    }
+
+    /// Mean absolute percentage error on the training data.
+    ///
+    /// Observations with absolute value `< 1e-9` are skipped to avoid
+    /// division by zero.
+    pub fn mape(&self) -> f64 {
+        let valid: Vec<(f64, f64)> = self
+            .observations
+            .iter()
+            .zip(self.residuals.iter())
+            .filter(|(obs, _)| obs.abs() >= 1e-9)
+            .map(|(obs, res)| (*obs, *res))
+            .collect();
+
+        if valid.is_empty() {
+            return 0.0;
+        }
+
+        let sum: f64 = valid.iter().map(|(obs, res)| (res / obs).abs()).sum();
+        sum / valid.len() as f64
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────
+
+    fn residual_std(&self) -> f64 {
+        if self.residuals.len() < 2 {
+            return 0.0;
+        }
+        let n = self.residuals.len() as f64;
+        let mean = self.residuals.iter().sum::<f64>() / n;
+        let variance = self.residuals.iter().map(|r| (r - mean).powi(2)).sum::<f64>() / (n - 1.0);
+        variance.sqrt()
+    }
+}
+
+// ── ES Forecaster tests ────────────────────────────────────────────────────
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod es_tests {
+    use super::*;
+
+    fn linear_series(n: usize, slope: f64) -> Vec<f64> {
+        (0..n).map(|i| i as f64 * slope).collect()
+    }
+
+    #[test]
+    fn simple_es_forecast_len() {
+        let data = linear_series(10, 1.0);
+        let fc = EsCostForecaster::fit(&data, ForecastMethod::SimpleExponential { alpha: 0.3 });
+        assert_eq!(fc.forecast(5).len(), 5);
+    }
+
+    #[test]
+    fn simple_es_mae_finite() {
+        let data = linear_series(10, 2.0);
+        let fc = EsCostForecaster::fit(&data, ForecastMethod::SimpleExponential { alpha: 0.3 });
+        assert!(fc.mae().is_finite());
+    }
+
+    #[test]
+    fn simple_es_mape_finite() {
+        let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let fc = EsCostForecaster::fit(&data, ForecastMethod::SimpleExponential { alpha: 0.3 });
+        assert!(fc.mape().is_finite());
+    }
+
+    #[test]
+    fn double_es_forecast_increasing_for_positive_trend() {
+        let data = linear_series(10, 1.0);
+        let fc = EsCostForecaster::fit(
+            &data,
+            ForecastMethod::DoubleExponential { alpha: 0.5, beta: 0.3 },
+        );
+        let preds = fc.forecast(3);
+        assert_eq!(preds.len(), 3);
+        // Each step should be >= the previous for positive trend series.
+        for w in preds.windows(2) {
+            assert!(w[1] >= w[0], "forecast not increasing: {:?}", preds);
+        }
+    }
+
+    #[test]
+    fn double_es_mae_lower_than_naive_for_linear() {
+        // For a perfect linear series, double ES should fit well.
+        let data = linear_series(20, 3.0);
+        let fc = EsCostForecaster::fit(
+            &data,
+            ForecastMethod::DoubleExponential { alpha: 0.9, beta: 0.9 },
+        );
+        // MAE should be finite and non-negative.
+        let mae = fc.mae();
+        assert!(mae >= 0.0);
+        assert!(mae.is_finite());
+    }
+
+    #[test]
+    fn holt_winters_forecast_len() {
+        let data: Vec<f64> = (0..24).map(|i| (i % 7) as f64 + 1.0).collect();
+        let fc = EsCostForecaster::fit(
+            &data,
+            ForecastMethod::HoltWinters { alpha: 0.3, beta: 0.1, gamma: 0.1, period: 7 },
+        );
+        assert_eq!(fc.forecast(7).len(), 7);
+    }
+
+    #[test]
+    fn holt_winters_mae_finite() {
+        let data: Vec<f64> = (0..24).map(|i| (i % 7) as f64 + 1.0).collect();
+        let fc = EsCostForecaster::fit(
+            &data,
+            ForecastMethod::HoltWinters { alpha: 0.3, beta: 0.1, gamma: 0.1, period: 7 },
+        );
+        assert!(fc.mae().is_finite());
+    }
+
+    #[test]
+    fn confidence_interval_len_matches_steps() {
+        let data = linear_series(10, 1.0);
+        let fc = EsCostForecaster::fit(&data, ForecastMethod::SimpleExponential { alpha: 0.3 });
+        let ci = fc.confidence_interval(5, 1.96);
+        assert_eq!(ci.len(), 5);
+    }
+
+    #[test]
+    fn confidence_interval_lower_le_upper() {
+        let data = linear_series(10, 1.0);
+        let fc = EsCostForecaster::fit(&data, ForecastMethod::SimpleExponential { alpha: 0.3 });
+        for (lo, hi) in fc.confidence_interval(5, 1.96) {
+            assert!(lo <= hi, "CI lower > upper: {lo} > {hi}");
+        }
+    }
+
+    #[test]
+    fn empty_data_returns_empty_forecast() {
+        let fc = EsCostForecaster::fit(&[], ForecastMethod::SimpleExponential { alpha: 0.3 });
+        assert!(fc.forecast(5).is_empty() || fc.forecast(5).iter().all(|&v| v == 0.0));
+    }
+
+    #[test]
+    fn forecast_zero_steps_empty() {
+        let data = linear_series(5, 1.0);
+        let fc = EsCostForecaster::fit(&data, ForecastMethod::SimpleExponential { alpha: 0.3 });
+        assert!(fc.forecast(0).is_empty());
+    }
+
+    #[test]
+    fn simple_es_model_update_and_forecast() {
+        let mut m = SimpleEsModel::new(0.5);
+        m.update(10.0);
+        m.update(20.0);
+        let preds = m.forecast(3);
+        assert_eq!(preds.len(), 3);
+        // All same value for simple ES.
+        assert_eq!(preds[0], preds[1]);
+    }
+
+    #[test]
+    fn double_es_model_update_and_forecast() {
+        let mut m = DoubleEsModel::new(0.5, 0.3);
+        for v in [1.0, 2.0, 3.0, 4.0, 5.0] {
+            m.update(v);
+        }
+        let preds = m.forecast(3);
+        assert_eq!(preds.len(), 3);
+    }
+
+    #[test]
+    fn holt_winters_model_update_and_forecast() {
+        let seasonal = vec![1.0, 1.2, 0.9, 0.8];
+        let mut m = HoltWintersModel::new(0.3, 0.1, 0.1, 4, seasonal);
+        m.level = 10.0;
+        for (t, v) in [10.0, 12.0, 9.0, 8.0, 11.0, 13.0].iter().enumerate() {
+            m.update(*v, t);
+        }
+        let preds = m.forecast(4, 5);
+        assert_eq!(preds.len(), 4);
+        assert!(preds.iter().all(|p| p.is_finite()));
+    }
+}
+
+// ── Legacy tests ───────────────────────────────────────────────────────────
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {

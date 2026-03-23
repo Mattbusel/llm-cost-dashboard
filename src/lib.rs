@@ -81,7 +81,8 @@ pub use comparison::{CostProjection, ProviderComparison, WorkloadProfile};
 pub use cost::{CacheBreakdown, CostLedger, CostRecord, ModelStats};
 pub use error::DashboardError;
 pub use export::{CostExporter, ExportFormat};
-pub use forecast::{CostForecaster, ForecastResult, HoltWintersForecast, SpendForecaster, Trend};
+pub use forecast::{CostForecaster, ForecastResult, HoltWintersForecast, SpendForecaster, Trend,
+    EsCostForecaster, ForecastMethod, SimpleEsModel, DoubleEsModel, HoltWintersModel};
 pub use log::{LogEntry, RequestLog};
 pub use org::{Organization, Project, Team};
 pub use tags::{TagIndex, TaggedRecord, Tags};
@@ -115,3 +116,4 @@ pub mod notification;
 pub mod benchmark;
 pub mod cost_optimizer;
 pub mod usage_limiter;
+pub mod cost_allocation;
