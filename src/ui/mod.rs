@@ -7,6 +7,8 @@
 
 /// Full-screen dashboard layout composer.
 pub mod dashboard;
+/// Interactive cost explorer mode (press `x` to enter).
+pub mod explorer;
 /// Centralised color and style palette.
 pub mod theme;
 /// Individual widget render functions.
@@ -56,6 +58,10 @@ pub struct App {
     pub anomaly_detector: AnomalyDetector,
     /// Ring buffer of the last 10 detected anomalies (oldest first).
     pub anomalies: Vec<CostAnomaly>,
+    /// Whether the interactive cost explorer mode is active.
+    pub explorer_active: bool,
+    /// State for the interactive cost explorer.
+    pub explorer_state: explorer::ExplorerState,
 }
 
 impl App {
@@ -75,6 +81,8 @@ impl App {
             current_session: None,
             anomaly_detector: AnomalyDetector::new(),
             anomalies: Vec::new(),
+            explorer_active: false,
+            explorer_state: explorer::ExplorerState::new(),
         }
     }
 
@@ -339,45 +347,91 @@ fn event_loop(
 ) -> Result<(), DashboardError> {
     info!("entering event loop");
     while app.running {
-        terminal
-            .draw(|frame| {
-                dashboard::render(
-                    frame,
-                    &app.ledger,
-                    &app.budget,
-                    app.scroll_offset,
-                    app.last_export_status.as_deref(),
-                    &app.anomalies,
-                    app.current_session.as_deref(),
-                )
-            })
-            .map_err(|e| DashboardError::Terminal(e.to_string()))?;
+        let records_snapshot: Vec<crate::cost::CostRecord> =
+            app.ledger.records().to_vec();
+
+        if app.explorer_active {
+            terminal
+                .draw(|frame| {
+                    explorer::render_explorer(
+                        frame,
+                        frame.area(),
+                        &records_snapshot,
+                        &app.explorer_state,
+                    )
+                })
+                .map_err(|e| DashboardError::Terminal(e.to_string()))?;
+        } else {
+            terminal
+                .draw(|frame| {
+                    dashboard::render(
+                        frame,
+                        &app.ledger,
+                        &app.budget,
+                        app.scroll_offset,
+                        app.last_export_status.as_deref(),
+                        &app.anomalies,
+                        app.current_session.as_deref(),
+                    )
+                })
+                .map_err(|e| DashboardError::Terminal(e.to_string()))?;
+        }
 
         if event::poll(Duration::from_millis(250))
             .map_err(|e| DashboardError::Terminal(e.to_string()))?
         {
             match event::read().map_err(|e| DashboardError::Terminal(e.to_string()))? {
-                Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
-                    KeyCode::Char('q') | KeyCode::Esc => {
-                        info!("quit key pressed -- stopping event loop");
-                        app.running = false;
+                Event::Key(key) if key.kind == KeyEventKind::Press => {
+                    if app.explorer_active {
+                        match key.code {
+                            KeyCode::Char('x') | KeyCode::Esc => {
+                                info!("exiting cost explorer");
+                                app.explorer_active = false;
+                            }
+                            KeyCode::Char('s') => {
+                                app.explorer_state.cycle_sort();
+                            }
+                            KeyCode::Enter => {
+                                app.explorer_state.toggle_detail();
+                            }
+                            KeyCode::Char('j') | KeyCode::Down => {
+                                let total = app.explorer_state.apply(&records_snapshot).len();
+                                app.explorer_state.move_down(total);
+                            }
+                            KeyCode::Char('k') | KeyCode::Up => {
+                                app.explorer_state.move_up();
+                            }
+                            _ => {}
+                        }
+                    } else {
+                        match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => {
+                                info!("quit key pressed -- stopping event loop");
+                                app.running = false;
+                            }
+                            KeyCode::Char('r') => {
+                                info!("reset triggered by user");
+                                app.reset();
+                            }
+                            KeyCode::Char('d') => {
+                                info!("loading demo data via keypress");
+                                app.load_demo_data();
+                            }
+                            KeyCode::Char('e') => {
+                                info!("export triggered by user");
+                                app.export_session();
+                            }
+                            KeyCode::Char('x') => {
+                                info!("entering cost explorer mode");
+                                app.explorer_active = true;
+                                app.explorer_state = explorer::ExplorerState::new();
+                            }
+                            KeyCode::Char('j') | KeyCode::Down => app.scroll_down(),
+                            KeyCode::Char('k') | KeyCode::Up => app.scroll_up(),
+                            _ => {}
+                        }
                     }
-                    KeyCode::Char('r') => {
-                        info!("reset triggered by user");
-                        app.reset();
-                    }
-                    KeyCode::Char('d') => {
-                        info!("loading demo data via keypress");
-                        app.load_demo_data();
-                    }
-                    KeyCode::Char('e') => {
-                        info!("export triggered by user");
-                        app.export_session();
-                    }
-                    KeyCode::Char('j') | KeyCode::Down => app.scroll_down(),
-                    KeyCode::Char('k') | KeyCode::Up => app.scroll_up(),
-                    _ => {}
-                },
+                }
                 _ => {}
             }
         }

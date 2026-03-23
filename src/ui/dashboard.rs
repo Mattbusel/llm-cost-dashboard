@@ -15,6 +15,7 @@ use ratatui::{
 use crate::budget::BudgetEnvelope;
 use crate::cost::{anomaly::CostAnomaly, CostLedger};
 use crate::forecast::{ForecastResult, SpendForecaster, Trend};
+use crate::recommendations::ModelRecommender;
 use crate::ui::{theme::Theme, widgets};
 
 /// Full dashboard rendering — called on every tick.
@@ -57,14 +58,15 @@ pub fn render(
         .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
         .split(outer[1]);
 
-    // Left col: summary + budget + forecast + cache breakdown
+    // Left col: summary + budget + forecast + cache breakdown + savings
     let left = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage(25),
-            Constraint::Percentage(25),
-            Constraint::Percentage(25),
-            Constraint::Percentage(25),
+            Constraint::Percentage(20),
+            Constraint::Percentage(20),
+            Constraint::Percentage(20),
+            Constraint::Percentage(20),
+            Constraint::Percentage(20),
         ])
         .split(main[0]);
 
@@ -74,6 +76,7 @@ pub fn render(
     widgets::render_budget(frame, left[1], budget);
     render_forecast(frame, left[2], ledger);
     render_cache_breakdown(frame, left[3], ledger);
+    render_savings_opportunities(frame, left[4], ledger);
 
     // Right col: model bar chart (top) + recent requests table (bottom)
     let right = Layout::default()
@@ -106,7 +109,7 @@ fn render_title(
     let mut spans = vec![
         Span::styled(" LLM Cost Dashboard", Theme::title()),
         Span::styled(
-            "  [q: quit | r: reset | d: demo | e: export | j/k: scroll]",
+            "  [q: quit | r: reset | d: demo | e: export | x: explorer | j/k: scroll]",
             Theme::dim(),
         ),
     ];
@@ -246,6 +249,71 @@ fn render_requests_table(
     frame.render_widget(table, area);
 }
 
+/// Render the anomaly panel showing the last 10 detected cost anomalies.
+///
+/// Each anomaly is color-coded by severity:
+/// - Low (2–3×): yellow
+/// - Medium (3–5×): red
+/// - High (>5×): bold red
+fn render_anomalies(frame: &mut Frame, area: ratatui::layout::Rect, anomalies: &[CostAnomaly]) {
+    use crate::cost::anomaly::AnomalySeverity;
+
+    let lines: Vec<Line> = if anomalies.is_empty() {
+        vec![Line::from(Span::styled(
+            "  No anomalies detected",
+            Theme::dim(),
+        ))]
+    } else {
+        anomalies
+            .iter()
+            .rev()
+            .take(4) // show at most 4 in the available height
+            .map(|a| {
+                let style = match a.severity {
+                    AnomalySeverity::Low => Theme::warn(),
+                    AnomalySeverity::Medium => Theme::danger(),
+                    AnomalySeverity::High => {
+                        Theme::danger().add_modifier(ratatui::style::Modifier::BOLD)
+                    }
+                };
+                Line::from(vec![
+                    Span::styled(
+                        format!("  {} ", a.detected_at.format("%H:%M:%S")),
+                        Theme::dim(),
+                    ),
+                    Span::styled(
+                        format!("{:<18}", a.model.chars().take(18).collect::<String>()),
+                        Theme::normal(),
+                    ),
+                    Span::styled(
+                        format!("{} ", a.severity),
+                        style,
+                    ),
+                    Span::styled(
+                        format!("actual=${:.6} expected=${:.6} ({})", a.actual, a.expected, a.ratio_str()),
+                        style,
+                    ),
+                ])
+            })
+            .collect()
+    };
+
+    let paragraph = Paragraph::new(lines).block(
+        Block::default()
+            .title(format!(
+                " Cost Anomalies ({} detected) ",
+                anomalies.len()
+            ))
+            .borders(Borders::ALL)
+            .border_style(if anomalies.is_empty() {
+                Theme::border()
+            } else {
+                Theme::danger()
+            }),
+    );
+    frame.render_widget(paragraph, area);
+}
+
 /// Render the cost forecast widget showing projected daily/monthly spend and trend.
 fn render_forecast(frame: &mut Frame, area: ratatui::layout::Rect, ledger: &CostLedger) {
     // Build a SpendForecaster from all records (cumulative cost over time).
@@ -367,6 +435,46 @@ fn render_cache_breakdown(frame: &mut Frame, area: ratatui::layout::Rect, ledger
     let paragraph = Paragraph::new(lines).block(
         Block::default()
             .title(" Cache Breakdown ")
+            .borders(Borders::ALL)
+            .border_style(Theme::border()),
+    );
+    frame.render_widget(paragraph, area);
+}
+
+/// Render the SAVINGS OPPORTUNITIES panel using the model recommendation engine.
+fn render_savings_opportunities(
+    frame: &mut Frame,
+    area: ratatui::layout::Rect,
+    ledger: &CostLedger,
+) {
+    let recommender = ModelRecommender::new(ledger);
+    let suggestions = recommender.suggest();
+
+    let lines: Vec<Line> = if suggestions.is_empty() {
+        vec![Line::from(Span::styled(
+            "No savings identified yet.",
+            Theme::dim(),
+        ))]
+    } else {
+        // Show top 3 suggestions.
+        suggestions
+            .iter()
+            .take(3)
+            .map(|s| {
+                Line::from(vec![
+                    Span::styled(
+                        format!("{:.0}% ", s.saving_pct),
+                        Theme::ok(),
+                    ),
+                    Span::styled(s.summary_line(), Theme::normal()),
+                ])
+            })
+            .collect()
+    };
+
+    let paragraph = Paragraph::new(lines).block(
+        Block::default()
+            .title(" Savings Opportunities ")
             .borders(Borders::ALL)
             .border_style(Theme::border()),
     );

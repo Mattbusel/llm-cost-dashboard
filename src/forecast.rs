@@ -1,10 +1,40 @@
 //! # Spend Forecast Engine
 //!
-//! Projects cumulative LLM spend to the end of the calendar month using
-//! Ordinary Least Squares (OLS) linear regression over a series of
-//! `(timestamp_secs, cumulative_cost_usd)` observations.
+//! Projects cumulative LLM spend forward using two complementary algorithms:
 //!
-//! ## Example
+//! 1. **OLS linear regression** — a simple trend line fitted to all
+//!    `(timestamp_secs, cumulative_cost_usd)` observations.  Used by
+//!    [`SpendForecaster::forecast`].
+//!
+//! 2. **Holt-Winters exponential smoothing** — a double-exponential smoother
+//!    that captures both the level and the trend of the cost series,
+//!    reacting faster to recent changes than OLS.  Used by
+//!    [`CostForecaster`], which is the recommended algorithm for production
+//!    monitoring.  Provides `next_hour`, `next_day`, `next_week`, and
+//!    `next_month` projections together with confidence intervals and a
+//!    budget-overage warning.
+//!
+//! ## Quick Start — Holt-Winters
+//!
+//! ```rust
+//! use llm_cost_dashboard::forecast::CostForecaster;
+//!
+//! let mut f = CostForecaster::new();
+//! // Feed hourly cumulative-cost observations (timestamp_secs, cost_usd).
+//! let base: f64 = 1_700_000_000.0;
+//! let hour = 3_600.0_f64;
+//! for i in 0..24_u32 {
+//!     // $0.50 / hour spend rate.
+//!     f.record(base + i as f64 * hour, i as f64 * 0.50);
+//! }
+//! if let Some(hw) = f.forecast(Some(50.0)) {
+//!     println!("next day: ${:.2}  (CI [{:.2}, {:.2}])",
+//!         hw.next_day_usd, hw.confidence_interval.0, hw.confidence_interval.1);
+//!     println!("next week: ${:.2}", hw.next_week_usd);
+//! }
+//! ```
+//!
+//! ## Quick Start — OLS (legacy)
 //!
 //! ```
 //! use llm_cost_dashboard::forecast::SpendForecaster;
@@ -305,6 +335,214 @@ fn is_leap(year: i64) -> bool {
     (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }
 
+// ---------------------------------------------------------------------------
+// Holt-Winters double exponential smoothing
+// ---------------------------------------------------------------------------
+
+/// Output of a Holt-Winters cost forecast.
+///
+/// All monetary values are in USD.  The confidence interval is an approximate
+/// 80 % prediction interval derived from the RMSE of the smoothed residuals.
+#[derive(Debug, Clone)]
+pub struct HoltWintersForecast {
+    /// Projected incremental spend over the next hour in USD.
+    pub next_hour_usd: f64,
+    /// Projected incremental spend over the next 24 hours in USD.
+    pub next_day_usd: f64,
+    /// Projected incremental spend over the next 7 days in USD.
+    pub next_week_usd: f64,
+    /// Projected incremental spend over the next 30 days in USD.
+    pub next_month_usd: f64,
+    /// Approximate 80 % prediction interval `(lower, upper)` for the
+    /// **next-hour** projection.  Wider intervals indicate higher uncertainty.
+    pub confidence_interval: (f64, f64),
+    /// `true` when the next-month projection exceeds 80 % of `budget_limit`
+    /// (only set when a budget was supplied to [`CostForecaster::forecast`]).
+    pub budget_warning: bool,
+}
+
+/// Holt-Winters double exponential smoothing forecaster.
+///
+/// Fits a level-and-trend model to a `(timestamp_secs, cumulative_cost_usd)`
+/// time series and projects spend forward in time.  Unlike OLS, it weights
+/// recent observations more heavily, making it well-suited for spend series
+/// that exhibit changing rates (e.g. business hours vs. weekends).
+///
+/// ## Parameters
+///
+/// - `alpha` — Level smoothing factor (`0 < alpha < 1`).  Higher values make
+///   the level react faster to recent observations (less smoothing).
+///   Default: `0.3`.
+/// - `beta` — Trend smoothing factor (`0 < beta < 1`).  Higher values make
+///   the trend react faster.  Default: `0.1`.
+///
+/// Both parameters are configurable via [`CostForecaster::with_params`].
+///
+/// ## Minimum Observations
+///
+/// At least **3** observations are required before [`forecast`] returns a
+/// result (needed to initialise both level and trend).
+///
+/// [`forecast`]: CostForecaster::forecast
+#[derive(Debug)]
+pub struct CostForecaster {
+    /// Stored `(timestamp_secs, cumulative_cost_usd)` pairs.
+    observations: Vec<(f64, f64)>,
+    /// Level smoothing coefficient α.
+    alpha: f64,
+    /// Trend smoothing coefficient β.
+    beta: f64,
+}
+
+impl Default for CostForecaster {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CostForecaster {
+    /// Create a forecaster with default smoothing parameters (α=0.3, β=0.1).
+    pub fn new() -> Self {
+        Self {
+            observations: Vec::new(),
+            alpha: 0.3,
+            beta: 0.1,
+        }
+    }
+
+    /// Override the default smoothing parameters.
+    ///
+    /// Both `alpha` and `beta` are clamped to `(0.0, 1.0)`.
+    pub fn with_params(mut self, alpha: f64, beta: f64) -> Self {
+        self.alpha = alpha.clamp(f64::EPSILON, 1.0 - f64::EPSILON);
+        self.beta = beta.clamp(f64::EPSILON, 1.0 - f64::EPSILON);
+        self
+    }
+
+    /// Append a `(timestamp_secs, cumulative_cost_usd)` observation.
+    ///
+    /// Observations must be supplied in **chronological order**.
+    pub fn record(&mut self, timestamp_secs: f64, cumulative_cost: f64) {
+        self.observations.push((timestamp_secs, cumulative_cost));
+    }
+
+    /// Number of observations recorded so far.
+    pub fn len(&self) -> usize {
+        self.observations.len()
+    }
+
+    /// Whether no observations have been recorded yet.
+    pub fn is_empty(&self) -> bool {
+        self.observations.is_empty()
+    }
+
+    /// Run the Holt-Winters smoother and project spend forward.
+    ///
+    /// Returns `None` when fewer than 3 observations are available.
+    ///
+    /// # Arguments
+    ///
+    /// * `budget_limit` — optional monthly budget cap in USD used to set
+    ///   [`HoltWintersForecast::budget_warning`].
+    pub fn forecast(&self, budget_limit: Option<f64>) -> Option<HoltWintersForecast> {
+        if self.observations.len() < 3 {
+            return None;
+        }
+
+        // Work in incremental costs (first differences) rather than cumulative,
+        // because Holt-Winters level/trend make more sense on rates than on
+        // an ever-increasing cumulative series.
+        let increments: Vec<f64> = self
+            .observations
+            .windows(2)
+            .map(|w| {
+                let dt = (w[1].0 - w[0].0).max(f64::EPSILON);
+                // Normalise to cost-per-second so unequal intervals cancel out.
+                (w[1].1 - w[0].1) / dt
+            })
+            .collect();
+
+        if increments.is_empty() {
+            return None;
+        }
+
+        // Initialise level and trend from the first two increments.
+        let mut level = increments[0];
+        let mut trend = if increments.len() >= 2 {
+            increments[1] - increments[0]
+        } else {
+            0.0
+        };
+
+        // Residuals for RMSE computation.
+        let mut residuals: Vec<f64> = Vec::with_capacity(increments.len());
+
+        // Apply double exponential smoothing (Holt's linear method).
+        for &y in &increments {
+            let prev_level = level;
+            let prev_trend = trend;
+            level = self.alpha * y + (1.0 - self.alpha) * (prev_level + prev_trend);
+            trend = self.beta * (level - prev_level) + (1.0 - self.beta) * prev_trend;
+            let forecast_t = prev_level + prev_trend;
+            residuals.push(y - forecast_t);
+        }
+
+        // RMSE of one-step-ahead residuals.
+        let rmse = {
+            let ss: f64 = residuals.iter().map(|r| r * r).sum();
+            (ss / residuals.len() as f64).sqrt()
+        };
+
+        // Typical observation interval in seconds.
+        let obs = &self.observations;
+        let n = obs.len();
+        let avg_interval_secs = if n >= 2 {
+            (obs[n - 1].0 - obs[0].0) / (n - 1) as f64
+        } else {
+            3_600.0 // fallback: assume hourly
+        };
+
+        // Project h steps ahead: forecast(h) = level + h * trend (per second).
+        // Convert back from cost/second to total cost over the horizon.
+        let hour_secs = 3_600.0_f64;
+        let day_secs = 86_400.0_f64;
+        let week_secs = 7.0 * day_secs;
+        let month_secs = 30.0 * day_secs;
+
+        // Steps-ahead for each horizon.
+        let steps_hour = (hour_secs / avg_interval_secs).max(1.0);
+        let steps_day = (day_secs / avg_interval_secs).max(1.0);
+        let steps_week = (week_secs / avg_interval_secs).max(1.0);
+        let steps_month = (month_secs / avg_interval_secs).max(1.0);
+
+        // Holt forecast h steps ahead: level + h * trend (still per second).
+        let rate_h = |h: f64| -> f64 { (level + h * trend).max(0.0) };
+
+        let next_hour_usd = rate_h(steps_hour) * hour_secs;
+        let next_day_usd = rate_h(steps_day) * day_secs;
+        let next_week_usd = rate_h(steps_week) * week_secs;
+        let next_month_usd = rate_h(steps_month) * month_secs;
+
+        // 80 % prediction interval for next_hour (z_80 ≈ 1.28).
+        let uncertainty = 1.28 * rmse * hour_secs;
+        let ci_lower = (next_hour_usd - uncertainty).max(0.0);
+        let ci_upper = next_hour_usd + uncertainty;
+
+        let budget_warning = budget_limit
+            .map(|limit| next_month_usd >= limit * 0.80)
+            .unwrap_or(false);
+
+        Some(HoltWintersForecast {
+            next_hour_usd,
+            next_day_usd,
+            next_week_usd,
+            next_month_usd,
+            confidence_interval: (ci_lower, ci_upper),
+            budget_warning,
+        })
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
@@ -434,5 +672,123 @@ mod tests {
     fn test_default_impl() {
         let f = SpendForecaster::default();
         assert!(f.is_empty());
+    }
+
+    // ── Holt-Winters tests ────────────────────────────────────────────────────
+
+    fn make_hw_forecaster_linear(n: usize, rate_per_hour: f64) -> CostForecaster {
+        let mut f = CostForecaster::new();
+        let base = 1_700_000_000.0_f64;
+        let hour = 3_600.0_f64;
+        for i in 0..n {
+            let t = base + i as f64 * hour;
+            let cost = i as f64 * rate_per_hour;
+            f.record(t, cost);
+        }
+        f
+    }
+
+    #[test]
+    fn hw_requires_three_observations() {
+        let mut f = CostForecaster::new();
+        let base = 1_700_000_000.0;
+        f.record(base, 0.0);
+        f.record(base + 3_600.0, 0.5);
+        assert!(f.forecast(None).is_none());
+        f.record(base + 7_200.0, 1.0);
+        assert!(f.forecast(None).is_some());
+    }
+
+    #[test]
+    fn hw_next_day_greater_than_next_hour() {
+        let f = make_hw_forecaster_linear(24, 0.50);
+        let result = f.forecast(None).unwrap();
+        assert!(
+            result.next_day_usd >= result.next_hour_usd,
+            "next_day ({:.4}) should be >= next_hour ({:.4})",
+            result.next_day_usd,
+            result.next_hour_usd
+        );
+    }
+
+    #[test]
+    fn hw_next_week_greater_than_next_day() {
+        let f = make_hw_forecaster_linear(24, 0.50);
+        let result = f.forecast(None).unwrap();
+        assert!(
+            result.next_week_usd >= result.next_day_usd,
+            "next_week ({:.4}) should be >= next_day ({:.4})",
+            result.next_week_usd,
+            result.next_day_usd
+        );
+    }
+
+    #[test]
+    fn hw_next_month_greater_than_next_week() {
+        let f = make_hw_forecaster_linear(24, 0.50);
+        let result = f.forecast(None).unwrap();
+        assert!(
+            result.next_month_usd >= result.next_week_usd,
+            "next_month ({:.4}) should be >= next_week ({:.4})",
+            result.next_month_usd,
+            result.next_week_usd
+        );
+    }
+
+    #[test]
+    fn hw_confidence_interval_straddles_point_estimate() {
+        let f = make_hw_forecaster_linear(24, 0.50);
+        let result = f.forecast(None).unwrap();
+        let (lo, hi) = result.confidence_interval;
+        assert!(lo <= result.next_hour_usd, "CI lower ({lo:.4}) should be <= point estimate ({:.4})", result.next_hour_usd);
+        assert!(hi >= result.next_hour_usd, "CI upper ({hi:.4}) should be >= point estimate ({:.4})", result.next_hour_usd);
+    }
+
+    #[test]
+    fn hw_budget_warning_fires_when_exceeds_80_pct() {
+        // 24 h at $0.50/h → $12/day → ~$360/month. Budget = $100 → 80% = $80.
+        let f = make_hw_forecaster_linear(24, 0.50);
+        let result = f.forecast(Some(100.0)).unwrap();
+        // next_month_usd should exceed $80 (80% of $100), triggering warning.
+        assert!(result.budget_warning, "budget_warning should be true");
+    }
+
+    #[test]
+    fn hw_no_budget_warning_when_well_within_budget() {
+        // Very low spend rate: $0.001/h → ~$0.72/month. Budget = $1000.
+        let f = make_hw_forecaster_linear(24, 0.001);
+        let result = f.forecast(Some(1_000.0)).unwrap();
+        assert!(!result.budget_warning, "no warning expected for tiny spend vs large budget");
+    }
+
+    #[test]
+    fn hw_default_is_empty() {
+        let f = CostForecaster::default();
+        assert!(f.is_empty());
+        assert_eq!(f.len(), 0);
+    }
+
+    #[test]
+    fn hw_with_params_clamps() {
+        // alpha > 1.0 should be clamped.
+        let f = CostForecaster::new().with_params(5.0, -1.0);
+        // Just verify it doesn't panic and produces a result.
+        let mut f2 = f;
+        let base = 1_700_000_000.0;
+        f2.record(base, 0.0);
+        f2.record(base + 3_600.0, 1.0);
+        f2.record(base + 7_200.0, 2.0);
+        assert!(f2.forecast(None).is_some());
+    }
+
+    #[test]
+    fn hw_all_projections_non_negative() {
+        let f = make_hw_forecaster_linear(10, 2.0);
+        let result = f.forecast(None).unwrap();
+        assert!(result.next_hour_usd >= 0.0);
+        assert!(result.next_day_usd >= 0.0);
+        assert!(result.next_week_usd >= 0.0);
+        assert!(result.next_month_usd >= 0.0);
+        assert!(result.confidence_interval.0 >= 0.0);
     }
 }

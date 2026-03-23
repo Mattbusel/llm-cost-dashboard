@@ -14,16 +14,19 @@
 //! - [`anomaly`] - rolling Z-score cost spike detector
 //! - [`api`] - optional Axum HTTP API server (`--serve` mode)
 //! - [`budget`] - hard budget enforcement, soft alert thresholds, and org→team→project hierarchy ([`budget::hierarchy::OrgTree`])
+//! - [`comparison`] - multi-provider side-by-side cost comparison and monthly projections ([`comparison::ProviderComparison`])
 //! - [`cost`] - per-request cost records and the append-only ledger
 //! - [`cost::pricing`] - static pricing table and cost computation helpers
 //! - [`error`] - unified error type
 //! - [`export`] - CSV and JSON cost data export (file-based and in-memory)
-//! - [`forecast`] - OLS linear regression forecaster with trend analysis and seasonal adjustment
+//! - [`forecast`] - OLS regression and Holt-Winters exponential smoothing cost forecaster
 //! - [`log`] - newline-delimited JSON log ingestion with header-based provider detection
+//! - [`org`] - multi-tenant organization -> team -> project hierarchy with spend tracking
 //! - [`recommendations`] - model recommendation engine with projected monthly savings
 //! - [`scheduler`] - cron-based automated export scheduling
 //! - [`session`] - per-session budget and cost tracking
 //! - [`tagging`] - FinOps cost attribution via structured tag rules and tag-aggregated ledger
+//! - [`tags`] - lightweight key=value cost attribution tags with top-N spend queries
 //! - [`trace`] - lightweight distributed tracing
 //! - [`trends`] - daily time-series aggregation, moving averages, period-over-period comparison, and ASCII sparklines
 //! - [`ui`] - ratatui TUI application state and event loop
@@ -41,15 +44,18 @@ pub mod allocation;
 pub mod anomaly;
 pub mod api;
 pub mod budget;
+pub mod comparison;
 pub mod cost;
 pub mod error;
 pub mod export;
 pub mod forecast;
 pub mod log;
+pub mod org;
 pub mod recommendations;
 pub mod scheduler;
 pub mod session;
 pub mod tagging;
+pub mod tags;
 pub mod trace;
 pub mod trends;
 pub mod ui;
@@ -60,11 +66,14 @@ pub use budget::{
     BudgetAlert, BudgetEnvelope, OrgSummary, OrgTree, ProjectConfig, ProjectSummary, TeamConfig,
     TeamSummary,
 };
+pub use comparison::{CostProjection, ProviderComparison, WorkloadProfile};
 pub use cost::{CacheBreakdown, CostLedger, CostRecord, ModelStats};
 pub use error::DashboardError;
 pub use export::{CostExporter, ExportFormat};
-pub use forecast::{ForecastResult, SpendForecaster, Trend};
+pub use forecast::{CostForecaster, ForecastResult, HoltWintersForecast, SpendForecaster, Trend};
 pub use log::{LogEntry, RequestLog};
+pub use org::{Organization, Project, Team};
+pub use tags::{TagIndex, TaggedRecord, Tags};
 pub use trace::{SpanStore, TraceSpan};
 pub use ui::App;
 pub use validator::{
