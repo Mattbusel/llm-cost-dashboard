@@ -123,3 +123,5 @@ pub mod model_lifecycle;
 pub mod roi_calculator;
 pub mod experiment_tracker;
 pub mod cost_governance;
+pub mod invoice_generator;
+pub mod model_registry;
