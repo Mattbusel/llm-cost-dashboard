@@ -105,3 +105,5 @@ pub use budget::planner::{
 pub use tenant::{Tenant, TenantIsolator, TenantLedger, TenantReport};
 pub mod webhook_dispatch;
 pub mod aggregator;
+pub mod billing;
+pub mod capacity;
