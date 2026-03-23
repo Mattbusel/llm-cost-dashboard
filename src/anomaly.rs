@@ -118,6 +118,18 @@ impl CostAnomalyDetector {
                 } else {
                     None
                 }
+            } else if (cost - mean).abs() > f64::EPSILON {
+                // Std-dev is zero (all prior values identical) but the new
+                // value differs from the mean — treat as a maximally anomalous
+                // event with an infinite z-score represented as f64::INFINITY.
+                Some(AnomalyEvent {
+                    timestamp: SystemTime::now(),
+                    model: model.to_string(),
+                    cost_usd: cost,
+                    z_score: f64::INFINITY,
+                    window_mean: mean,
+                    window_std: std,
+                })
             } else {
                 None
             }
@@ -163,9 +175,17 @@ impl CostAnomalyDetector {
             return 0.0;
         }
         let nf = n as f64;
-        let variance = (self.sum_sq / nf) - (self.sum / nf).powi(2);
-        // Guard against tiny negative values caused by floating-point rounding.
-        variance.max(0.0).sqrt()
+        let mean = self.sum / nf;
+        let variance = (self.sum_sq / nf) - mean * mean;
+        // Guard against tiny negative or near-zero values caused by
+        // floating-point rounding (e.g. a window of identical values).
+        // Use a relative threshold: if variance is negligible compared to
+        // mean², treat it as exactly zero.
+        let relative_eps = mean * mean * f64::EPSILON * nf;
+        if variance <= relative_eps {
+            return 0.0;
+        }
+        variance.sqrt()
     }
 
     /// Number of observations currently held in the sliding window.
@@ -267,7 +287,13 @@ mod tests {
 
     #[test]
     fn test_anomaly_event_fields_populated() {
-        let mut d = primed(49, 0.001);
+        // Build a window with slight variance so window_std > 0 and the
+        // anomaly event carries a finite z-score.
+        let mut d = CostAnomalyDetector::new(100, 3.0);
+        for i in 0..49u64 {
+            // Alternate between 0.001 and 0.002 to introduce variance.
+            d.observe("test-model", if i % 2 == 0 { 0.001 } else { 0.002 });
+        }
         let ev = d.observe("claude-sonnet-4-6", 5.0).unwrap();
         assert_eq!(ev.model, "claude-sonnet-4-6");
         assert!((ev.cost_usd - 5.0).abs() < 1e-9);

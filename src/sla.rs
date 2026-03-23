@@ -108,21 +108,21 @@ pub struct SlaConfig {
 impl Default for SlaConfig {
     fn default() -> Self {
         let model_tiers = vec![
+            // Standard (must come before Premium entries that are substrings).
+            ("gpt-4o-mini".to_string(),       SlaTier::Standard),
+            ("claude-3-sonnet".to_string(),   SlaTier::Standard),
+            ("claude-sonnet".to_string(),     SlaTier::Standard),
+            ("gpt-4-turbo".to_string(),       SlaTier::Standard),
             // Premium.
             ("gpt-4o".to_string(),           SlaTier::Premium),
-            ("claude-opus".to_string(),       SlaTier::Premium),
             ("claude-3-opus".to_string(),     SlaTier::Premium),
+            ("claude-opus".to_string(),       SlaTier::Premium),
             ("o1".to_string(),               SlaTier::Premium),
             ("o3".to_string(),               SlaTier::Premium),
-            // Standard.
-            ("gpt-4o-mini".to_string(),       SlaTier::Standard),
-            ("claude-sonnet".to_string(),     SlaTier::Standard),
-            ("claude-3-sonnet".to_string(),   SlaTier::Standard),
-            ("gpt-4-turbo".to_string(),       SlaTier::Standard),
             // Economy.
             ("gpt-3.5".to_string(),           SlaTier::Economy),
-            ("claude-haiku".to_string(),      SlaTier::Economy),
             ("claude-3-haiku".to_string(),    SlaTier::Economy),
+            ("claude-haiku".to_string(),      SlaTier::Economy),
             ("gemini-flash".to_string(),      SlaTier::Economy),
             ("mistral-7b".to_string(),        SlaTier::Economy),
         ];

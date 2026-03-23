@@ -507,7 +507,9 @@ mod tests {
 
     #[test]
     fn soft_alert_fires_when_threshold_crossed() {
-        let mut tree = OrgTree::new("ORG", 1000.0, 0.50);
+        // Org limit is 100 so that spending 55 (55%) also crosses the org
+        // 50% soft threshold, giving alerts at all three levels.
+        let mut tree = OrgTree::new("ORG", 100.0, 0.50);
         tree.add_team(TeamConfig {
             name: "team1".into(),
             limit_usd: 100.0,
@@ -593,7 +595,10 @@ mod tests {
     #[test]
     fn teams_over_threshold_filters_correctly() {
         let mut tree = example_tree();
-        tree.spend("eng", "prod", 400.0).unwrap(); // 400/500 = 80%
+        // eng team limit=500; prod limit=300, staging limit=150.
+        // Spend 250 on prod + 150 on staging = 400 total → 400/500 = 80%.
+        tree.spend("eng", "prod", 250.0).unwrap();
+        tree.spend("eng", "staging", 150.0).unwrap();
         tree.spend("data", "analytics", 100.0).unwrap(); // 100/400 = 25%
 
         let over = tree.teams_over_threshold(0.70);

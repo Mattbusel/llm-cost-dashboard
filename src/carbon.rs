@@ -134,23 +134,23 @@ impl Default for CarbonConfig {
     fn default() -> Self {
         Self {
             model_energy: vec![
-                // Large / frontier.
-                ("gpt-4".to_string(),        3.0),
-                ("claude-opus".to_string(),  3.0),
-                ("claude-3-opus".to_string(),3.0),
-                ("o1".to_string(),           3.5),
-                ("o3".to_string(),           3.5),
+                // Small (must come before medium/large entries that are substrings).
+                ("gpt-4o-mini".to_string(),  0.4),
+                ("claude-3-haiku".to_string(), 0.4),
+                ("claude-haiku".to_string(), 0.4),
+                ("gpt-3.5".to_string(),      0.2),
+                ("gemini-flash".to_string(), 0.3),
+                ("mistral-7b".to_string(),   0.25),
                 // Medium.
                 ("gpt-4o".to_string(),       1.2),
                 ("claude-sonnet".to_string(),1.2),
                 ("gpt-4-turbo".to_string(),  1.5),
-                // Small.
-                ("gpt-4o-mini".to_string(),  0.4),
-                ("claude-haiku".to_string(), 0.4),
-                ("claude-3-haiku".to_string(), 0.4),
-                ("gpt-3.5".to_string(),      0.2),
-                ("gemini-flash".to_string(), 0.3),
-                ("mistral-7b".to_string(),   0.25),
+                // Large / frontier.
+                ("gpt-4".to_string(),        3.0),
+                ("claude-3-opus".to_string(),3.0),
+                ("claude-opus".to_string(),  3.0),
+                ("o1".to_string(),           3.5),
+                ("o3".to_string(),           3.5),
             ],
             default_energy_wh_per_ktok: 1.0,
             pue: 1.2,
