@@ -1,9 +1,36 @@
 name: CI
-on: [push, pull_request]
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
 jobs:
-  check:
+  test:
+    name: Test Suite
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo check
+        with:
+          components: clippy
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      - name: cargo check
+        run: cargo check
+      - name: cargo test
+        run: cargo test --all-features
+      - name: cargo clippy
+        run: cargo clippy --all-features -- -D warnings
+      - name: cargo audit
+        run: |
+          cargo install cargo-audit --locked 2>/dev/null || true
+          cargo audit

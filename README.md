@@ -160,22 +160,155 @@ on bad input.
 
 ## Supported providers and models
 
-| Provider   | Model               | Input ($/1M) | Output ($/1M) |
-|------------|---------------------|--------------|---------------|
-| Anthropic  | claude-opus-4-6     | $15.00       | $75.00        |
-| Anthropic  | claude-sonnet-4-6   | $3.00        | $15.00        |
-| Anthropic  | claude-haiku-4-5    | $0.25        | $1.25         |
-| OpenAI     | gpt-4o              | $5.00        | $15.00        |
-| OpenAI     | gpt-4o-mini         | $0.15        | $0.60         |
-| OpenAI     | gpt-4-turbo         | $10.00       | $30.00        |
-| OpenAI     | o1 / o1-preview     | $15.00       | $60.00        |
-| OpenAI     | o3-mini / o4-mini   | $1.10        | $4.40         |
-| Google     | gemini-2.0-flash    | $0.10        | $0.40         |
-| Google     | gemini-1.5-pro      | $3.50        | $10.50        |
-| Google     | gemini-1.5-flash    | $0.075       | $0.30         |
+**100+ models** built-in across 11 providers. Lookup is case-insensitive.
+Unknown models fall back to `$5.00/$15.00` automatically.
 
-Unknown models fall back to `$5.00/$15.00` input/output pricing automatically.
-Lookup is case-insensitive.
+<details>
+<summary><b>Anthropic Claude</b> — 9 models</summary>
+
+| Model | Input ($/1M) | Output ($/1M) |
+|-------|-------------|--------------|
+| claude-opus-4-6 | $15.00 | $75.00 |
+| claude-sonnet-4-6 | $3.00 | $15.00 |
+| claude-haiku-4-5 | $0.25 | $1.25 |
+| claude-3-5-sonnet-20241022 | $3.00 | $15.00 |
+| claude-3-5-haiku-20241022 | $0.80 | $4.00 |
+| claude-3-opus-20240229 | $15.00 | $75.00 |
+| claude-3-sonnet-20240229 | $3.00 | $15.00 |
+| claude-3-haiku-20240307 | $0.25 | $1.25 |
+
+</details>
+
+<details>
+<summary><b>OpenAI</b> — 11 models</summary>
+
+| Model | Input ($/1M) | Output ($/1M) |
+|-------|-------------|--------------|
+| gpt-4.5-preview | $75.00 | $150.00 |
+| gpt-4o | $5.00 | $15.00 |
+| gpt-4o-mini | $0.15 | $0.60 |
+| gpt-4-turbo | $10.00 | $30.00 |
+| gpt-4 | $30.00 | $60.00 |
+| gpt-3.5-turbo | $0.50 | $1.50 |
+| o1 | $15.00 | $60.00 |
+| o3 | $10.00 | $40.00 |
+| o3-mini | $1.10 | $4.40 |
+| o4-mini | $1.10 | $4.40 |
+
+</details>
+
+<details>
+<summary><b>Google Gemini</b> — 6 models</summary>
+
+| Model | Input ($/1M) | Output ($/1M) |
+|-------|-------------|--------------|
+| gemini-2.5-pro | $1.25 | $10.00 |
+| gemini-2.0-flash | $0.10 | $0.40 |
+| gemini-2.0-flash-lite | $0.075 | $0.30 |
+| gemini-1.5-pro | $3.50 | $10.50 |
+| gemini-1.5-flash | $0.075 | $0.30 |
+| gemini-1.5-flash-8b | $0.0375 | $0.15 |
+
+</details>
+
+<details>
+<summary><b>DeepSeek</b> — 7 models</summary>
+
+| Model | Input ($/1M) | Output ($/1M) |
+|-------|-------------|--------------|
+| deepseek-r1 | $0.55 | $2.19 |
+| deepseek-v3 | $0.27 | $1.10 |
+| deepseek-v2-5 | $0.14 | $0.28 |
+| deepseek-chat | $0.27 | $1.10 |
+| deepseek-r1-distill-llama-70b | $0.55 | $2.19 |
+
+</details>
+
+<details>
+<summary><b>Mistral</b> — 8 models</summary>
+
+| Model | Input ($/1M) | Output ($/1M) |
+|-------|-------------|--------------|
+| mistral-large-2411 | $2.00 | $6.00 |
+| mistral-small-2501 | $0.10 | $0.30 |
+| mistral-nemo | $0.15 | $0.15 |
+| codestral-2501 | $0.30 | $0.90 |
+| pixtral-large-2411 | $2.00 | $6.00 |
+| ministral-8b-2410 | $0.10 | $0.10 |
+| ministral-3b-2410 | $0.04 | $0.04 |
+
+</details>
+
+<details>
+<summary><b>Meta Llama</b> — 7 models (Together AI / Groq)</summary>
+
+| Model | Input ($/1M) | Output ($/1M) |
+|-------|-------------|--------------|
+| meta-llama/llama-3.1-405b-instruct-turbo | $5.00 | $5.00 |
+| meta-llama/llama-3.1-70b-instruct-turbo | $0.88 | $0.88 |
+| meta-llama/llama-3.3-70b-instruct-turbo | $0.88 | $0.88 |
+| llama-3.3-70b-versatile (Groq) | $0.59 | $0.79 |
+| llama-3.1-8b-instant (Groq) | $0.05 | $0.08 |
+
+</details>
+
+<details>
+<summary><b>xAI Grok, Cohere, Perplexity, Amazon, Qwen, AI21, Writer</b> — 30+ models</summary>
+
+| Provider | Model | Input ($/1M) | Output ($/1M) |
+|----------|-------|-------------|--------------|
+| xAI | grok-3 | $3.00 | $15.00 |
+| xAI | grok-3-mini | $0.30 | $0.50 |
+| xAI | grok-2-1212 | $2.00 | $10.00 |
+| Cohere | command-r-plus-08-2024 | $2.50 | $10.00 |
+| Cohere | command-r-08-2024 | $0.15 | $0.60 |
+| Perplexity | sonar-pro | $3.00 | $15.00 |
+| Perplexity | sonar | $1.00 | $1.00 |
+| Amazon | amazon.nova-pro-v1:0 | $0.80 | $3.20 |
+| Amazon | amazon.nova-lite-v1:0 | $0.06 | $0.24 |
+| Amazon | amazon.nova-micro-v1:0 | $0.035 | $0.14 |
+| Qwen | qwen-max | $1.60 | $6.40 |
+| Qwen | qwen-turbo | $0.05 | $0.20 |
+| AI21 | jamba-1.5-large | $2.00 | $8.00 |
+| Writer | palmyra-x-004 | $5.00 | $15.00 |
+
+</details>
+
+---
+
+## HTTP API mode
+
+Run the TUI **and** a local HTTP API server simultaneously with `--serve`:
+
+```bash
+llm-dash --demo --serve 8080
+```
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/summary` | GET | JSON cost summary (total, by-model, projections) |
+| `/api/export.json` | GET | Full ledger as pretty-printed JSON download |
+| `/api/export.csv` | GET | Full ledger as CSV download |
+
+Enables dashboard-as-a-service: forward LLM logs to `llm-dash` and poll
+aggregated costs from CI scripts or monitoring dashboards.
+
+---
+
+## Webhook alerts
+
+Send budget alerts to Slack, Discord, or any HTTP endpoint:
+
+```bash
+llm-dash --budget 50 \
+  --webhook-url "https://hooks.slack.com/services/T.../B.../xxx" \
+  --webhook-threshold 40 \
+  --webhook-format slack
+```
+
+Alert kinds fired automatically: `BudgetWarning`, `BudgetExceeded`,
+`CostAnomaly`, `DailySpendSpike`. Each kind has a configurable cooldown
+(default 5 min) to prevent alert floods.
 
 ---
 
@@ -185,12 +318,27 @@ Lookup is case-insensitive.
 llm-dash [OPTIONS]
 
 Options:
-  --budget <BUDGET>        Monthly budget limit in USD [default: 10.0]
-  --log-file <LOG_FILE>    JSON log file to tail for live data
-  --demo                   Start with built-in demo data pre-loaded
-  -h, --help               Print help
-  -V, --version            Print version
+  --budget <BUDGET>             Monthly budget limit in USD [default: 10.0]
+  --log-file <LOG_FILE>         NDJSON log file to read on startup
+  --demo                        Pre-load built-in demo data
+  --serve <PORT>                Start HTTP API server alongside the TUI
+  --webhook-url <URL>           Webhook URL for budget alerts (repeatable)
+  --webhook-threshold <USD>     Alert threshold in USD (default: 80% of budget)
+  --webhook-format <FORMAT>     Payload format: "slack" or "generic"
+  -h, --help                    Print help
+  -V, --version                 Print version
 ```
+
+### Keyboard shortcuts
+
+| Key | Action |
+|-----|--------|
+| `q` | Quit |
+| `r` | Reset ledger |
+| `d` | Load demo data |
+| `E` | Export to timestamped CSV / JSON file |
+| `j` / `k` | Scroll requests table |
+| `↑` / `↓` | Scroll requests table |
 
 ---
 
