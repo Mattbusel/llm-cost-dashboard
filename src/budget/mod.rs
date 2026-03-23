@@ -11,6 +11,7 @@
 //! roll-up, see [`hierarchy::OrgTree`].
 
 pub mod hierarchy;
+pub mod planner;
 
 pub use hierarchy::{BudgetAlert, OrgSummary, OrgTree, ProjectConfig, ProjectSummary, TeamConfig, TeamSummary};
 

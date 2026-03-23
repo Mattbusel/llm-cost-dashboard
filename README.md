@@ -16,6 +16,85 @@ Structured logging via [tracing](https://tracing.rs). No database. No network. N
 
 ## What's New
 
+### Budget Planner
+
+The new `budget::planner` module provides period-aware budget planning with percentage-based allocation splits, reconciliation against actuals, and linear spend forecasting.
+
+**Key types:** `BudgetPlanner`, `BudgetPlan`, `BudgetPeriod`, `BudgetAllocation`, `AllocationStatus`, `BudgetForecast`
+
+**Periods:** `Daily`, `Weekly`, `Monthly`, `Quarterly`
+
+**Status thresholds:**
+- `< 80 %` of budget → `OnTrack`
+- `80 – 99 %` → `AtRisk { pct_used }`
+- `≥ 100 %` → `Exceeded { overage_usd }`
+
+```rust
+use llm_cost_dashboard::budget::planner::{BudgetPeriod, BudgetPlanner};
+use std::collections::HashMap;
+
+// Split a $1000/month budget
+let mut plan = BudgetPlanner::create(
+    BudgetPeriod::Monthly,
+    1000.0,
+    vec![
+        ("GPT-4o".to_string(), 60.0),   // $600
+        ("Claude".to_string(), 40.0),   // $400
+    ],
+);
+
+// Fill in actuals mid-month
+let mut actuals = HashMap::new();
+actuals.insert("GPT-4o".to_string(), 490.0);
+actuals.insert("Claude".to_string(), 180.0);
+BudgetPlanner::reconcile(&mut plan, &actuals);
+
+// Linear forecast at 50% elapsed
+let fc = BudgetPlanner::forecast(&plan, 0.5);
+println!("Projected: ${:.2} (on_track={})", fc.projected_total_usd, fc.on_track);
+```
+
+---
+
+### Multi-Tenant Cost Isolation
+
+The new `tenant` module provides per-tenant cost tracking, quota enforcement, top-model analysis, and daily spend breakdowns.
+
+**Key types:** `TenantIsolator`, `Tenant`, `TenantLedger`, `TenantReport`
+
+- **Registration** — `add_tenant(Tenant { id, name, quota_usd, tags })`
+- **Recording** — `record(tenant_id, cost_usd, model_id)` appends a timestamped event
+- **Quota tracking** — `quota_remaining(tenant_id)` returns `Option<f64>` (negative when exceeded)
+- **Over-quota scan** — `over_quota()` returns all tenants whose spend exceeds their limit
+- **Reports** — `report_all()` produces `Vec<TenantReport>` with top-5 models and daily breakdown per tenant
+
+**CLI flags** (in `llm-dash`):
+- `--tenant <id>` — filter all output to a single tenant
+- `--tenant-report` — print a summary table of all tenant spend vs. quota
+
+```rust
+use llm_cost_dashboard::tenant::{Tenant, TenantIsolator};
+
+let mut isolator = TenantIsolator::new();
+isolator.add_tenant(Tenant {
+    id: "platform".to_string(),
+    name: "Platform Team".to_string(),
+    quota_usd: Some(500.0),
+    tags: vec!["internal".to_string()],
+});
+
+isolator.record("platform", 12.50, "gpt-4o");
+isolator.record("platform", 7.00, "claude-3-5-sonnet");
+
+for r in isolator.report_all() {
+    println!("{}: ${:.2} used of ${:.2} quota",
+        r.tenant.name, r.total_cost_usd,
+        r.quota_usd.unwrap_or(0.0));
+}
+```
+
+---
+
 ### Cost Allocation Tagging
 
 The `tagging` module now includes a `TagStore` — an append-only, indexed store of `TaggedRequest` records with structured `CostTag` key/value labels for FinOps cost attribution.

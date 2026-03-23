@@ -65,6 +65,7 @@ pub mod webhook;
 pub mod clustering;
 pub mod sla;
 pub mod carbon;
+pub mod tenant;
 
 pub use budget::{
     BudgetAlert, BudgetEnvelope, OrgSummary, OrgTree, ProjectConfig, ProjectSummary, TeamConfig,
@@ -92,3 +93,7 @@ pub use allocation::{
 pub use trends::{DailySpend, TrendAnalyzer, TrendReport};
 pub use alerts::{Alert, AlertChannel, AlertEngine, AlertRule, AlertSummary, AlertWindow};
 pub use anomaly::{AnomalyConfig, AnomalyDetector, AnomalyReport, AnomalyResult};
+pub use budget::planner::{
+    AllocationStatus, BudgetAllocation, BudgetForecast, BudgetPeriod, BudgetPlan, BudgetPlanner,
+};
+pub use tenant::{Tenant, TenantIsolator, TenantLedger, TenantReport};
