@@ -141,3 +141,5 @@ pub mod trend_analyzer;
 pub mod cost_attribution;
 pub mod capacity_planner;
 pub mod sla_monitor;
+pub mod cohort_analyzer;
+pub mod savings_calculator;
