@@ -127,3 +127,5 @@ pub mod invoice_generator;
 pub mod model_registry;
 pub mod anomaly_detector;
 pub mod budget_planner;
+pub mod usage_reporter;
+pub mod cost_allocator_v2;
