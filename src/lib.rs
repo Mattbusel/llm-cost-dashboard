@@ -68,6 +68,8 @@ pub mod carbon;
 pub mod tenant;
 pub mod prediction;
 pub mod diff;
+pub mod model_compare;
+pub mod trend;
 
 pub use budget::{
     BudgetAlert, BudgetEnvelope, OrgSummary, OrgTree, ProjectConfig, ProjectSummary, TeamConfig,

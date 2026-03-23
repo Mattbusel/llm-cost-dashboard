@@ -16,6 +16,32 @@ Structured logging via [tracing](https://tracing.rs). No database. No network. N
 
 ## What's New
 
+### Model Comparison Dashboard
+
+The new `model_compare` module computes per-model cost, efficiency, latency, and reliability metrics from a `&[TaggedRequest]` slice.
+
+**Key types:** `ModelComparison`, `ModelMetrics`, `RankMetric`, `SavingsReport`
+
+**Features:**
+- `ModelComparison::compute(requests)` — aggregates one `ModelMetrics` entry per unique `model_id`
+- `ModelMetrics` fields: `total_cost_usd`, `total_tokens`, `avg_cost_per_1k_tokens`, `request_count`, `p50_latency_ms`, `p99_latency_ms`, `error_rate`
+- Latency read from `"latency_ms"` tag; error flag from `"error=true"` tag
+- `ModelComparison::rank_by(RankMetric)` — rank by `Cost`, `TokenEfficiency`, `Speed`, or `Reliability` (best first)
+- `ModelComparison::render_table()` — ASCII table with all metrics; best value per column marked with `*`
+- `ModelComparison::savings_report(baseline_model)` — `SavingsReport { baseline, comparisons: Vec<(String, pct_change, usd_change)> }`
+
+### Cost Trend Analysis
+
+The new `trend` module provides OLS regression, CUSUM changepoint detection, and day-of-week seasonality over `TrendPoint` (daily aggregated cost) data.
+
+**Key types:** `TrendAnalyzer`, `TrendPoint`, `TrendResult`, `TrendDirection`, `SeasonalityReport`
+
+**Features:**
+- `TrendAnalyzer::fit(points)` — OLS linear regression; returns `slope_usd_per_day`, `intercept`, `r_squared`, and `trend_direction`
+- `TrendDirection::Rising { daily_increase_usd }`, `Falling { daily_decrease_usd }`, `Flat` (threshold ±$0.001/day)
+- `TrendAnalyzer::detect_changepoints(points, sensitivity)` — CUSUM algorithm: accumulate deviation from mean; flag when cumulative sum exceeds `sensitivity * std_dev`; returns `Vec<DateTime<Utc>>`
+- `TrendAnalyzer::seasonality(points)` — day-of-week average cost; identifies highest/lowest spend day names
+
 ### Cost Prediction Engine
 
 The new `prediction` module provides a 24×7 pattern-matrix cost predictor trained on historical [`TaggedRequest`] data.
