@@ -72,6 +72,18 @@ struct Cli {
     #[arg(long, value_name = "PATH")]
     export_json: Option<PathBuf>,
 
+    /// Export tagged requests using the new Exporter engine.
+    ///
+    /// Supported formats: csv, json, jsonl, markdown.
+    ///
+    /// Example: `llm-dash --demo --export json --out costs.json`
+    #[arg(long, value_name = "FORMAT")]
+    export: Option<String>,
+
+    /// Output file path for `--export`. Defaults to stdout if omitted.
+    #[arg(long, value_name = "FILE")]
+    out: Option<PathBuf>,
+
     /// Tag all ingested log entries with a session name.
     ///
     /// When set, every [`CostRecord`][llm_cost_dashboard::CostRecord] created
@@ -233,6 +245,69 @@ fn main() {
             }
             Err(e) => {
                 error!(error = %e, "JSON export failed");
+                eprintln!("Export error: {e}");
+                std::process::exit(1);
+            }
+        }
+    }
+
+    // Handle --export / --out: export using the new Exporter engine.
+    if let Some(ref format_str) = cli.export {
+        use llm_cost_dashboard::export::{ExportError, ExportFormat, Exporter};
+        use llm_cost_dashboard::tagging::{CostTag, TaggedRequest};
+
+        let fmt = match format_str.to_lowercase().as_str() {
+            "csv" => ExportFormat::Csv,
+            "json" => ExportFormat::Json,
+            "jsonl" => ExportFormat::Jsonl,
+            "markdown" | "md" => ExportFormat::Markdown,
+            other => {
+                eprintln!("Unknown export format: {other}. Use csv, json, jsonl, or markdown.");
+                std::process::exit(1);
+            }
+        };
+
+        // Convert ledger records into TaggedRequest slice.
+        let tagged: Vec<TaggedRequest> = app.ledger.records().iter().map(|r| {
+            let mut tags = Vec::new();
+            if let Some(ref sid) = r.session_id {
+                tags.push(CostTag::new("session", sid.clone()));
+            }
+            tags.push(CostTag::new("provider", r.provider.clone()));
+            TaggedRequest {
+                request_id: 0,
+                model_id: r.model.clone(),
+                cost_usd: r.total_cost_usd,
+                tokens_in: r.input_tokens as u32,
+                tokens_out: r.output_tokens as u32,
+                tags,
+                timestamp: r.timestamp,
+            }
+        }).collect();
+
+        let result: Result<(), ExportError> = if let Some(ref out_path) = cli.out {
+            let mut file = match std::fs::File::create(out_path) {
+                Ok(f) => f,
+                Err(e) => {
+                    eprintln!("Cannot create output file {}: {e}", out_path.display());
+                    std::process::exit(1);
+                }
+            };
+            Exporter::export(&tagged, fmt, &mut file)
+        } else {
+            let stdout = std::io::stdout();
+            let mut lock = stdout.lock();
+            Exporter::export(&tagged, fmt, &mut lock)
+        };
+
+        match result {
+            Ok(()) => {
+                if let Some(ref out_path) = cli.out {
+                    println!("Exported {} records to {}", tagged.len(), out_path.display());
+                }
+                return;
+            }
+            Err(e) => {
                 eprintln!("Export error: {e}");
                 std::process::exit(1);
             }

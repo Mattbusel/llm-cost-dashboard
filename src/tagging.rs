@@ -435,3 +435,424 @@ mod tests {
         assert_eq!(ranked[2].0, "c");
     }
 }
+
+// ===========================================================================
+// Cost Allocation Tagging — TagStore, TaggedRequest, TagReport
+// ===========================================================================
+
+use chrono::{DateTime, Utc};
+
+/// An arbitrary key/value tag for cost attribution.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CostTag {
+    /// Tag key (e.g. `"project"`, `"team"`, `"env"`).
+    pub key: String,
+    /// Tag value (e.g. `"recommendation-engine"`, `"platform"`, `"production"`).
+    pub value: String,
+}
+
+impl CostTag {
+    /// Create a new `CostTag`.
+    pub fn new(key: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            key: key.into(),
+            value: value.into(),
+        }
+    }
+}
+
+/// A single tagged inference request with cost and token information.
+#[derive(Debug, Clone)]
+pub struct TaggedRequest {
+    /// Unique numeric request identifier.
+    pub request_id: u64,
+    /// Model used for this request (e.g. `"gpt-4o-mini"`).
+    pub model_id: String,
+    /// Total cost in USD.
+    pub cost_usd: f64,
+    /// Number of input (prompt) tokens.
+    pub tokens_in: u32,
+    /// Number of output (completion) tokens.
+    pub tokens_out: u32,
+    /// Arbitrary k/v tags attached to this request.
+    pub tags: Vec<CostTag>,
+    /// Wall-clock time of the request.
+    pub timestamp: DateTime<Utc>,
+}
+
+impl TaggedRequest {
+    /// Look up the value of the first tag with `key`.
+    pub fn tag_value(&self, key: &str) -> Option<&str> {
+        self.tags
+            .iter()
+            .find(|t| t.key == key)
+            .map(|t| t.value.as_str())
+    }
+}
+
+/// Filter criteria for [`TagStore::query`].
+#[derive(Debug, Clone, Default)]
+pub struct TagFilter {
+    /// If set, only requests whose tags contain a tag with this key are returned.
+    pub key: Option<String>,
+    /// If set, only requests whose tags contain `key=value` are returned.
+    /// Ignored unless `key` is also set.
+    pub value: Option<String>,
+    /// Inclusive lower bound on `timestamp`.
+    pub since: Option<DateTime<Utc>>,
+    /// Inclusive upper bound on `timestamp`.
+    pub until: Option<DateTime<Utc>>,
+}
+
+/// Aggregated statistics for a group of requests sharing a tag value.
+#[derive(Debug, Clone, Default)]
+pub struct GroupStats {
+    /// Sum of `cost_usd` across all requests in the group.
+    pub total_cost_usd: f64,
+    /// Sum of `tokens_in + tokens_out` across all requests in the group.
+    pub total_tokens: u64,
+    /// Number of requests in the group.
+    pub request_count: u64,
+    /// `total_cost_usd / request_count`, or `0.0` for empty groups.
+    pub avg_cost_usd: f64,
+}
+
+/// A top-10-by-cost report for a given tag dimension.
+#[derive(Debug, Clone)]
+pub struct TagReport {
+    /// The tag key this report was generated for.
+    pub tag_key: String,
+    /// Top 10 `(tag_value, GroupStats)` pairs, sorted by `total_cost_usd` descending.
+    pub top_groups: Vec<(String, GroupStats)>,
+}
+
+impl TagReport {
+    /// Generate a report for `tag_key` from `store`, returning the top 10
+    /// tag values by total cost.
+    pub fn generate(store: &TagStore, tag_key: &str) -> Self {
+        let groups = store.group_by(tag_key);
+        let mut sorted: Vec<(String, GroupStats)> = groups.into_iter().collect();
+        sorted.sort_by(|a, b| {
+            b.1.total_cost_usd
+                .partial_cmp(&a.1.total_cost_usd)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        sorted.truncate(10);
+        TagReport {
+            tag_key: tag_key.to_string(),
+            top_groups: sorted,
+        }
+    }
+}
+
+/// Append-only store of [`TaggedRequest`]s with indexed tag lookup.
+///
+/// Backed by a `Vec` for append-only storage and a
+/// `HashMap<String, Vec<usize>>` index for fast tag-key lookups.
+#[derive(Debug, Default)]
+pub struct TagStore {
+    requests: Vec<TaggedRequest>,
+    /// Maps `tag_key` -> list of request indices that have that key.
+    index: HashMap<String, Vec<usize>>,
+}
+
+impl TagStore {
+    /// Create an empty store.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Append a request to the store and update the index.
+    pub fn push(&mut self, req: TaggedRequest) {
+        let idx = self.requests.len();
+        for tag in &req.tags {
+            self.index
+                .entry(tag.key.clone())
+                .or_default()
+                .push(idx);
+        }
+        self.requests.push(req);
+    }
+
+    /// Return all requests in insertion order.
+    pub fn all(&self) -> &[TaggedRequest] {
+        &self.requests
+    }
+
+    /// Number of requests in the store.
+    pub fn len(&self) -> usize {
+        self.requests.len()
+    }
+
+    /// True if the store contains no requests.
+    pub fn is_empty(&self) -> bool {
+        self.requests.is_empty()
+    }
+
+    /// Query requests matching `filter`.
+    ///
+    /// All provided criteria are ANDed together.
+    pub fn query(&self, filter: &TagFilter) -> Vec<&TaggedRequest> {
+        // Start with candidate indices.
+        let candidates: Box<dyn Iterator<Item = usize>> = if let Some(key) = &filter.key {
+            match self.index.get(key) {
+                Some(indices) => Box::new(indices.iter().copied()),
+                None => return Vec::new(),
+            }
+        } else {
+            Box::new(0..self.requests.len())
+        };
+
+        candidates
+            .filter_map(|i| self.requests.get(i))
+            .filter(|r| {
+                // value filter
+                if let (Some(key), Some(val)) = (&filter.key, &filter.value) {
+                    if !r.tags.iter().any(|t| &t.key == key && &t.value == val) {
+                        return false;
+                    }
+                }
+                // since filter
+                if let Some(since) = filter.since {
+                    if r.timestamp < since {
+                        return false;
+                    }
+                }
+                // until filter
+                if let Some(until) = filter.until {
+                    if r.timestamp > until {
+                        return false;
+                    }
+                }
+                true
+            })
+            .collect()
+    }
+
+    /// Group requests by a tag key and aggregate cost/token statistics.
+    ///
+    /// Requests that do not have the specified tag key are grouped under
+    /// the `"(untagged)"` key.
+    pub fn group_by(&self, tag_key: &str) -> HashMap<String, GroupStats> {
+        let mut groups: HashMap<String, GroupStats> = HashMap::new();
+
+        for req in &self.requests {
+            let group_key = req
+                .tag_value(tag_key)
+                .unwrap_or("(untagged)")
+                .to_string();
+
+            let g = groups.entry(group_key).or_default();
+            g.total_cost_usd += req.cost_usd;
+            g.total_tokens += u64::from(req.tokens_in) + u64::from(req.tokens_out);
+            g.request_count += 1;
+        }
+
+        // Compute averages.
+        for g in groups.values_mut() {
+            if g.request_count > 0 {
+                g.avg_cost_usd = g.total_cost_usd / g.request_count as f64;
+            }
+        }
+
+        groups
+    }
+}
+
+// ── TagStore tests ────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tag_store_tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    fn ts(secs: i64) -> DateTime<Utc> {
+        Utc.timestamp_opt(secs, 0).unwrap()
+    }
+
+    fn req(id: u64, model: &str, cost: f64, tags: Vec<CostTag>) -> TaggedRequest {
+        TaggedRequest {
+            request_id: id,
+            model_id: model.to_string(),
+            cost_usd: cost,
+            tokens_in: 100,
+            tokens_out: 50,
+            tags,
+            timestamp: ts(1_700_000_000 + id as i64),
+        }
+    }
+
+    fn tag(k: &str, v: &str) -> CostTag {
+        CostTag::new(k, v)
+    }
+
+    #[test]
+    fn test_push_and_len() {
+        let mut store = TagStore::new();
+        store.push(req(1, "gpt-4o", 0.01, vec![]));
+        store.push(req(2, "claude-3", 0.02, vec![]));
+        assert_eq!(store.len(), 2);
+    }
+
+    #[test]
+    fn test_is_empty() {
+        let store = TagStore::new();
+        assert!(store.is_empty());
+    }
+
+    #[test]
+    fn test_query_no_filter_returns_all() {
+        let mut store = TagStore::new();
+        store.push(req(1, "a", 0.01, vec![]));
+        store.push(req(2, "b", 0.02, vec![]));
+        let results = store.query(&TagFilter::default());
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_query_by_key() {
+        let mut store = TagStore::new();
+        store.push(req(1, "a", 0.01, vec![tag("env", "prod")]));
+        store.push(req(2, "b", 0.02, vec![tag("team", "search")]));
+        let filter = TagFilter { key: Some("env".to_string()), ..Default::default() };
+        let results = store.query(&filter);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].request_id, 1);
+    }
+
+    #[test]
+    fn test_query_by_key_and_value() {
+        let mut store = TagStore::new();
+        store.push(req(1, "a", 0.01, vec![tag("env", "prod")]));
+        store.push(req(2, "b", 0.02, vec![tag("env", "staging")]));
+        let filter = TagFilter {
+            key: Some("env".to_string()),
+            value: Some("prod".to_string()),
+            ..Default::default()
+        };
+        let results = store.query(&filter);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].request_id, 1);
+    }
+
+    #[test]
+    fn test_query_since() {
+        let mut store = TagStore::new();
+        let mut r1 = req(1, "a", 0.01, vec![]);
+        r1.timestamp = ts(1000);
+        let mut r2 = req(2, "b", 0.02, vec![]);
+        r2.timestamp = ts(2000);
+        store.push(r1);
+        store.push(r2);
+        let filter = TagFilter { since: Some(ts(1500)), ..Default::default() };
+        let results = store.query(&filter);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].request_id, 2);
+    }
+
+    #[test]
+    fn test_query_until() {
+        let mut store = TagStore::new();
+        let mut r1 = req(1, "a", 0.01, vec![]);
+        r1.timestamp = ts(1000);
+        let mut r2 = req(2, "b", 0.02, vec![]);
+        r2.timestamp = ts(2000);
+        store.push(r1);
+        store.push(r2);
+        let filter = TagFilter { until: Some(ts(1500)), ..Default::default() };
+        let results = store.query(&filter);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].request_id, 1);
+    }
+
+    #[test]
+    fn test_group_by_tag() {
+        let mut store = TagStore::new();
+        store.push(req(1, "a", 0.10, vec![tag("team", "search")]));
+        store.push(req(2, "a", 0.20, vec![tag("team", "search")]));
+        store.push(req(3, "a", 0.05, vec![tag("team", "billing")]));
+        let groups = store.group_by("team");
+        let search = &groups["search"];
+        assert!((search.total_cost_usd - 0.30).abs() < 1e-9);
+        assert_eq!(search.request_count, 2);
+        let billing = &groups["billing"];
+        assert!((billing.total_cost_usd - 0.05).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_group_by_untagged() {
+        let mut store = TagStore::new();
+        store.push(req(1, "a", 0.10, vec![])); // no "team" tag
+        let groups = store.group_by("team");
+        assert!(groups.contains_key("(untagged)"));
+    }
+
+    #[test]
+    fn test_group_by_avg_cost() {
+        let mut store = TagStore::new();
+        store.push(req(1, "a", 0.10, vec![tag("env", "prod")]));
+        store.push(req(2, "a", 0.20, vec![tag("env", "prod")]));
+        let groups = store.group_by("env");
+        let prod = &groups["prod"];
+        assert!((prod.avg_cost_usd - 0.15).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_tag_report_top_10() {
+        let mut store = TagStore::new();
+        for i in 0..15u64 {
+            store.push(req(i, "a", i as f64 * 0.1, vec![tag("proj", &format!("p{i}"))]));
+        }
+        let report = TagReport::generate(&store, "proj");
+        assert_eq!(report.top_groups.len(), 10);
+        // First entry should have the highest cost.
+        assert!(
+            report.top_groups[0].1.total_cost_usd >= report.top_groups[1].1.total_cost_usd
+        );
+    }
+
+    #[test]
+    fn test_tag_report_tag_key() {
+        let store = TagStore::new();
+        let report = TagReport::generate(&store, "team");
+        assert_eq!(report.tag_key, "team");
+    }
+
+    #[test]
+    fn test_query_missing_key_returns_empty() {
+        let mut store = TagStore::new();
+        store.push(req(1, "a", 0.01, vec![tag("env", "prod")]));
+        let filter = TagFilter {
+            key: Some("nonexistent".to_string()),
+            ..Default::default()
+        };
+        let results = store.query(&filter);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_cost_tag_new() {
+        let t = CostTag::new("k", "v");
+        assert_eq!(t.key, "k");
+        assert_eq!(t.value, "v");
+    }
+
+    #[test]
+    fn test_tagged_request_tag_value() {
+        let r = req(1, "a", 0.01, vec![tag("env", "prod"), tag("team", "search")]);
+        assert_eq!(r.tag_value("env"), Some("prod"));
+        assert_eq!(r.tag_value("missing"), None);
+    }
+
+    #[test]
+    fn test_total_tokens_in_group() {
+        let mut store = TagStore::new();
+        let mut r = req(1, "a", 0.01, vec![tag("env", "prod")]);
+        r.tokens_in = 200;
+        r.tokens_out = 100;
+        store.push(r);
+        let groups = store.group_by("env");
+        assert_eq!(groups["prod"].total_tokens, 300);
+    }
+}

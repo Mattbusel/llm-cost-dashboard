@@ -14,6 +14,78 @@ Structured logging via [tracing](https://tracing.rs). No database. No network. N
 
 ---
 
+## What's New
+
+### Cost Allocation Tagging
+
+The `tagging` module now includes a `TagStore` — an append-only, indexed store of `TaggedRequest` records with structured `CostTag` key/value labels for FinOps cost attribution.
+
+**Key types:** `CostTag`, `TaggedRequest`, `TagStore`, `TagFilter`, `GroupStats`, `TagReport`
+
+```rust
+use llm_cost_dashboard::tagging::{CostTag, TagStore, TagFilter, TagReport, TaggedRequest};
+use chrono::Utc;
+
+let mut store = TagStore::new();
+store.push(TaggedRequest {
+    request_id: 1,
+    model_id: "gpt-4o-mini".to_string(),
+    cost_usd: 0.015,
+    tokens_in: 512,
+    tokens_out: 256,
+    tags: vec![
+        CostTag::new("project", "recommendation-engine"),
+        CostTag::new("env", "production"),
+    ],
+    timestamp: Utc::now(),
+});
+
+// Query by tag
+let results = store.query(&TagFilter {
+    key: Some("env".to_string()),
+    value: Some("production".to_string()),
+    ..Default::default()
+});
+
+// Group by tag dimension
+let groups = store.group_by("project");
+
+// Top-10 report by cost
+let report = TagReport::generate(&store, "project");
+```
+
+### Export Engine
+
+The `export` module now includes an `Exporter` that writes `TaggedRequest` slices to CSV, JSON, JSONL, or Markdown via `std::io::Write` (streaming-friendly).
+
+**Key types:** `Exporter`, `ExportError`, `ExportFormat` (extended with `Jsonl`, `Markdown`)
+
+| Format | Description |
+|--------|-------------|
+| `csv` | Header row + one row per request; all tag keys as extra columns |
+| `json` | `{ "requests": [...], "summary": { total_cost, total_tokens, count } }` |
+| `jsonl` | One JSON object per line (streaming-friendly) |
+| `markdown` | Summary table sorted by cost descending |
+
+**CLI flags:** `--export csv|json|jsonl|markdown --out <file>`
+
+```bash
+# Export tagged requests as JSONL
+llm-dash --demo --export jsonl --out costs.jsonl
+
+# Export as Markdown to stdout
+llm-dash --demo --export markdown
+```
+
+```rust
+use llm_cost_dashboard::export::{Exporter, ExportFormat};
+
+let mut buf = Vec::new();
+Exporter::export(&requests, ExportFormat::Jsonl, &mut buf).unwrap();
+```
+
+---
+
 ## What is this?
 
 `llm-cost-dashboard` is a Rust terminal application (TUI) that reads a stream of
