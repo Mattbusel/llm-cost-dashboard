@@ -146,3 +146,5 @@ pub mod savings_calculator;
 pub mod multi_tenant;
 pub mod cost_forecast;
 pub mod integration_webhooks;
+pub mod budget_controller;
+pub mod usage_report;
