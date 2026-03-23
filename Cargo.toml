@@ -55,6 +55,8 @@ reqwest = { version = "0.12", features = ["json", "blocking"], default-features 
 csv = "1"
 # toml: alert rules file parsing
 toml = "0.8"
+# dashmap: concurrent hash map used by dashboard_metrics
+dashmap = "5"
 
 [dev-dependencies]
 tokio-test = "0.4"

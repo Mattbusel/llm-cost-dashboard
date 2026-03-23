@@ -135,3 +135,5 @@ pub mod cost_predictor;
 pub mod resource_quota;
 pub mod token_optimizer;
 pub mod benchmark_runner;
+pub mod alert_manager;
+pub mod dashboard_metrics;
