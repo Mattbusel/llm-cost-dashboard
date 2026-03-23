@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use clap::Parser;
+use llm_cost_dashboard::export::{export_csv, export_json};
 use llm_cost_dashboard::ui::{self, App};
 use llm_cost_dashboard::webhook::{WebhookConfig, WebhookFormat};
 use tracing::{error, info, warn};
@@ -54,6 +55,33 @@ struct Cli {
     /// Webhook payload format: "slack" or "generic" (default: generic).
     #[arg(long, default_value = "generic", value_name = "FORMAT")]
     webhook_format: String,
+
+    /// Export all records to a CSV file at PATH then exit (no TUI).
+    ///
+    /// If `--log-file` or `--demo` is also given, data is loaded first.
+    ///
+    /// Example: `llm-dash --log-file requests.ndjson --export-csv costs.csv`
+    #[arg(long, value_name = "PATH")]
+    export_csv: Option<PathBuf>,
+
+    /// Export all records to a JSON file at PATH then exit (no TUI).
+    ///
+    /// If `--log-file` or `--demo` is also given, data is loaded first.
+    ///
+    /// Example: `llm-dash --log-file requests.ndjson --export-json costs.json`
+    #[arg(long, value_name = "PATH")]
+    export_json: Option<PathBuf>,
+
+    /// Tag all ingested log entries with a session name.
+    ///
+    /// When set, every [`CostRecord`][llm_cost_dashboard::CostRecord] created
+    /// during this run will have its `session_id` field set to SESSION_NAME.
+    /// This enables session-level cost aggregation and per-session budget
+    /// tracking in the session panel.
+    ///
+    /// Example: `llm-dash --session experiment-v2 --log-file requests.ndjson`
+    #[arg(long, value_name = "SESSION_NAME")]
+    session: Option<String>,
 }
 
 fn main() {
@@ -71,10 +99,17 @@ fn main() {
         budget_usd = cli.budget,
         demo = cli.demo,
         serve = ?cli.serve,
+        session = ?cli.session,
         "llm-dash starting"
     );
 
     let mut app = App::new(cli.budget);
+
+    // Attach the session name to the App so all ingested records are tagged.
+    if let Some(ref session_name) = cli.session {
+        info!(session = %session_name, "session tracking active");
+        app.set_session(session_name.clone());
+    }
 
     // Register webhook configurations.
     let webhook_threshold = cli

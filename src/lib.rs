@@ -53,7 +53,10 @@ pub use budget::{
 pub use cost::{CacheBreakdown, CostLedger, CostRecord, ModelStats};
 pub use error::DashboardError;
 pub use export::{CostExporter, ExportFormat};
-pub use forecast::{ForecastResult, SpendForecaster, Trend};
+pub use forecast::{
+    ForecastResult, SeasonalAdjustment, SpendForecast, SpendForecaster, Trend, TrendDirection,
+    TrendForecaster,
+};
 pub use log::{LogEntry, RequestLog};
 pub use trace::{SpanStore, TraceSpan};
 pub use ui::App;
