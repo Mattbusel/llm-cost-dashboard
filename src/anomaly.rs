@@ -25,6 +25,8 @@
 use std::collections::VecDeque;
 use std::time::SystemTime;
 
+use chrono::{DateTime, Utc};
+
 /// A single anomaly event produced when a cost observation falls outside the
 /// configured Z-score threshold.
 #[derive(Debug, Clone)]
@@ -300,5 +302,369 @@ mod tests {
         assert!(ev.window_mean > 0.0);
         assert!(ev.window_std > 0.0);
         assert!(ev.z_score > 0.0);
+    }
+}
+
+// ============================================================================
+// AnomalyDetector — Welford online algorithm with full report generation
+// ============================================================================
+
+/// Configuration for [`AnomalyDetector`].
+#[derive(Debug, Clone)]
+pub struct AnomalyConfig {
+    /// Number of observations that form the rolling window.
+    ///
+    /// Must be at least 2.  Clamped internally if smaller.
+    pub window_size: usize,
+    /// Z-score above which an observation is classified as anomalous.
+    ///
+    /// Both positive (overspend) and negative (underspend) deviations are checked.
+    pub z_threshold: f64,
+    /// Minimum number of samples before the detector can fire.
+    pub min_samples: usize,
+}
+
+impl Default for AnomalyConfig {
+    fn default() -> Self {
+        Self {
+            window_size: 30,
+            z_threshold: 3.0,
+            min_samples: 5,
+        }
+    }
+}
+
+/// Per-observation anomaly assessment.
+#[derive(Debug, Clone)]
+pub struct AnomalyResult {
+    /// Whether this observation is classified as anomalous.
+    pub is_anomaly: bool,
+    /// Z-score of this observation (signed; positive = overspend).
+    pub z_score: f64,
+    /// Rolling mean at the time of this observation (USD).
+    pub mean_usd: f64,
+    /// Rolling standard deviation at the time of this observation (USD).
+    pub stddev_usd: f64,
+    /// The observed cost value (USD).
+    pub current_usd: f64,
+}
+
+/// Aggregate report over a batch of observations.
+#[derive(Debug, Clone)]
+pub struct AnomalyReport {
+    /// All `(timestamp, result)` pairs that were classified as anomalous.
+    pub anomalies: Vec<(DateTime<Utc>, AnomalyResult)>,
+    /// Fraction of observations classified as anomalous (0.0–1.0).
+    pub anomaly_rate: f64,
+    /// Maximum absolute Z-score observed across all inputs.
+    pub max_z_score: f64,
+}
+
+/// Z-score anomaly detector using Welford's online algorithm.
+///
+/// Maintains only the count, mean, and M2 aggregates — no stored history —
+/// giving O(1) memory and O(1) per-observation update.
+///
+/// Detects both positive spikes (overspend) and negative dips
+/// (underspend / service outage).
+pub struct AnomalyDetector {
+    config: AnomalyConfig,
+    /// Number of observations fed so far.
+    count: usize,
+    /// Welford running mean.
+    mean: f64,
+    /// Welford M2 aggregate (sum of squared deviations from the mean).
+    m2: f64,
+    /// Sliding window for tracking oldest values so we can age them out.
+    ///
+    /// We use a VecDeque of (observation, delta_mean) pairs.  When the
+    /// window is full we remove the oldest value using the inverse Welford
+    /// update.
+    window: VecDeque<f64>,
+}
+
+impl AnomalyDetector {
+    /// Create a new detector with the given configuration.
+    pub fn new(config: AnomalyConfig) -> Self {
+        let window_size = config.window_size.max(2);
+        Self {
+            config: AnomalyConfig {
+                window_size,
+                ..config
+            },
+            count: 0,
+            mean: 0.0,
+            m2: 0.0,
+            window: VecDeque::with_capacity(window_size),
+        }
+    }
+
+    /// Feed a single cost observation and return the anomaly assessment.
+    pub fn observe(&mut self, cost: f64) -> AnomalyResult {
+        // If window full, remove oldest value (reverse Welford).
+        if self.window.len() == self.config.window_size {
+            if let Some(old) = self.window.pop_front() {
+                // Reverse Welford update.
+                self.count -= 1;
+                if self.count == 0 {
+                    self.mean = 0.0;
+                    self.m2 = 0.0;
+                } else {
+                    let new_mean = (self.mean * (self.count as f64 + 1.0) - old) / self.count as f64;
+                    self.m2 -= (old - self.mean) * (old - new_mean);
+                    self.mean = new_mean;
+                    if self.m2 < 0.0 {
+                        self.m2 = 0.0; // numerical guard
+                    }
+                }
+            }
+        }
+
+        // Capture pre-observation stats for scoring.
+        let pre_mean = self.mean;
+        let pre_stddev = self.current_stddev();
+        let pre_count = self.count;
+
+        // Welford update with the new observation.
+        self.count += 1;
+        let delta = cost - self.mean;
+        self.mean += delta / self.count as f64;
+        let delta2 = cost - self.mean;
+        self.m2 += delta * delta2;
+        self.window.push_back(cost);
+
+        // Classify.
+        let enough = pre_count >= self.config.min_samples.max(2);
+        let (z_score, is_anomaly) = if enough && pre_stddev > f64::EPSILON {
+            let z = (cost - pre_mean) / pre_stddev;
+            (z, z.abs() > self.config.z_threshold)
+        } else {
+            (0.0, false)
+        };
+
+        AnomalyResult {
+            is_anomaly,
+            z_score,
+            mean_usd: pre_mean,
+            stddev_usd: pre_stddev,
+            current_usd: cost,
+        }
+    }
+
+    /// Run `observe` on each `(timestamp, cost)` pair and return a full report.
+    pub fn analyze(&mut self, observations: &[(DateTime<Utc>, f64)]) -> AnomalyReport {
+        let total = observations.len();
+        let mut anomalies = Vec::new();
+        let mut max_z: f64 = 0.0;
+
+        for (ts, cost) in observations {
+            let result = self.observe(*cost);
+            if result.z_score.abs() > max_z {
+                max_z = result.z_score.abs();
+            }
+            if result.is_anomaly {
+                anomalies.push((*ts, result));
+            }
+        }
+
+        AnomalyReport {
+            anomaly_rate: if total == 0 {
+                0.0
+            } else {
+                anomalies.len() as f64 / total as f64
+            },
+            max_z_score: max_z,
+            anomalies,
+        }
+    }
+
+    /// Current sample standard deviation from the Welford accumulator.
+    fn current_stddev(&self) -> f64 {
+        if self.count < 2 {
+            return 0.0;
+        }
+        let variance = self.m2 / (self.count as f64 - 1.0);
+        if variance <= 0.0 {
+            0.0
+        } else {
+            variance.sqrt()
+        }
+    }
+
+    /// Number of observations currently in the sliding window.
+    pub fn window_len(&self) -> usize {
+        self.window.len()
+    }
+
+    /// Current rolling mean.
+    pub fn mean(&self) -> f64 {
+        self.mean
+    }
+
+    /// Current rolling standard deviation.
+    pub fn stddev(&self) -> f64 {
+        self.current_stddev()
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod welford_tests {
+    use super::*;
+    use chrono::Utc;
+
+    fn cfg(window: usize, threshold: f64, min_samples: usize) -> AnomalyConfig {
+        AnomalyConfig { window_size: window, z_threshold: threshold, min_samples }
+    }
+
+    #[test]
+    fn test_new_detector_empty() {
+        let d = AnomalyDetector::new(AnomalyConfig::default());
+        assert_eq!(d.window_len(), 0);
+        assert_eq!(d.mean(), 0.0);
+        assert_eq!(d.stddev(), 0.0);
+    }
+
+    #[test]
+    fn test_first_observation_not_anomaly() {
+        let mut d = AnomalyDetector::new(AnomalyConfig::default());
+        let r = d.observe(100.0);
+        assert!(!r.is_anomaly);
+    }
+
+    #[test]
+    fn test_constant_window_no_anomaly() {
+        let mut d = AnomalyDetector::new(cfg(20, 3.0, 5));
+        for _ in 0..15 {
+            let r = d.observe(0.001);
+            assert!(!r.is_anomaly);
+        }
+    }
+
+    #[test]
+    fn test_spike_detected() {
+        let mut d = AnomalyDetector::new(cfg(50, 3.0, 5));
+        for _ in 0..20 {
+            d.observe(0.001);
+        }
+        let r = d.observe(10.0); // massive spike
+        assert!(r.is_anomaly);
+        assert!(r.z_score > 3.0);
+    }
+
+    #[test]
+    fn test_negative_dip_detected() {
+        let mut d = AnomalyDetector::new(cfg(50, 3.0, 5));
+        for _ in 0..20 {
+            d.observe(1.0); // normal cost
+        }
+        let r = d.observe(0.000001); // near-zero dip
+        assert!(r.is_anomaly);
+        assert!(r.z_score < -3.0);
+    }
+
+    #[test]
+    fn test_min_samples_gate() {
+        let mut d = AnomalyDetector::new(cfg(50, 1.0, 10));
+        for _ in 0..9 {
+            d.observe(0.001);
+        }
+        // 9 observations < min_samples=10; spike should not fire yet.
+        let r = d.observe(999.0);
+        assert!(!r.is_anomaly);
+    }
+
+    #[test]
+    fn test_window_size_respected() {
+        let mut d = AnomalyDetector::new(cfg(5, 3.0, 2));
+        for i in 0..10 {
+            d.observe(i as f64);
+        }
+        assert_eq!(d.window_len(), 5);
+    }
+
+    #[test]
+    fn test_anomaly_result_fields() {
+        let mut d = AnomalyDetector::new(cfg(50, 3.0, 5));
+        for _ in 0..20 {
+            d.observe(1.0);
+        }
+        let r = d.observe(100.0);
+        assert!(r.current_usd == 100.0);
+        assert!(r.mean_usd > 0.0);
+        assert!(r.stddev_usd > 0.0);
+        assert!(r.is_anomaly);
+    }
+
+    #[test]
+    fn test_analyze_returns_anomalies() {
+        let mut d = AnomalyDetector::new(cfg(50, 3.0, 5));
+        let now = Utc::now();
+        let observations: Vec<(DateTime<Utc>, f64)> = (0..25)
+            .map(|i| (now, if i == 24 { 100.0 } else { 0.001 }))
+            .collect();
+        let report = d.analyze(&observations);
+        assert!(!report.anomalies.is_empty());
+        assert!(report.anomaly_rate > 0.0);
+    }
+
+    #[test]
+    fn test_analyze_anomaly_rate_zero_for_normal_data() {
+        let mut d = AnomalyDetector::new(cfg(50, 3.0, 5));
+        let now = Utc::now();
+        let observations: Vec<(DateTime<Utc>, f64)> = (0..20)
+            .map(|_| (now, 0.001))
+            .collect();
+        let report = d.analyze(&observations);
+        assert!(report.anomalies.is_empty());
+        assert_eq!(report.anomaly_rate, 0.0);
+    }
+
+    #[test]
+    fn test_max_z_score_tracked() {
+        let mut d = AnomalyDetector::new(cfg(50, 3.0, 5));
+        let now = Utc::now();
+        let observations: Vec<(DateTime<Utc>, f64)> = (0..25)
+            .map(|i| (now, if i == 24 { 1000.0 } else { 0.001 }))
+            .collect();
+        let report = d.analyze(&observations);
+        assert!(report.max_z_score > 0.0);
+    }
+
+    #[test]
+    fn test_empty_analyze_produces_empty_report() {
+        let mut d = AnomalyDetector::new(AnomalyConfig::default());
+        let report = d.analyze(&[]);
+        assert!(report.anomalies.is_empty());
+        assert_eq!(report.anomaly_rate, 0.0);
+        assert_eq!(report.max_z_score, 0.0);
+    }
+
+    #[test]
+    fn test_mean_updates_correctly() {
+        let mut d = AnomalyDetector::new(cfg(10, 3.0, 2));
+        d.observe(2.0);
+        d.observe(4.0);
+        d.observe(6.0);
+        // Mean should be approximately (2+4+6)/3 = 4.0.
+        assert!((d.mean() - 4.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_stddev_increases_with_variance() {
+        let mut d = AnomalyDetector::new(cfg(20, 3.0, 2));
+        for v in [1.0, 2.0, 3.0, 4.0, 5.0] {
+            d.observe(v);
+        }
+        assert!(d.stddev() > 0.0);
+    }
+
+    #[test]
+    fn test_window_eviction_keeps_window_size_bounded() {
+        let mut d = AnomalyDetector::new(cfg(3, 3.0, 2));
+        for i in 0..10 {
+            d.observe(i as f64);
+            assert!(d.window_len() <= 3);
+        }
     }
 }

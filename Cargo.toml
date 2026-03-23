@@ -50,9 +50,11 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # axum: HTTP API server for --serve mode
 axum = "0.7"
 # reqwest: HTTP client for webhook alerts (enabled via "webhooks" feature)
-reqwest = { version = "0.12", features = ["json"], default-features = false, optional = true }
+reqwest = { version = "0.12", features = ["json", "blocking"], default-features = false, optional = true }
 # csv: CSV serialization for export
 csv = "1"
+# toml: alert rules file parsing
+toml = "0.8"
 
 [dev-dependencies]
 tokio-test = "0.4"

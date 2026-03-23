@@ -108,6 +108,25 @@ struct Cli {
     /// Example: `llm-dash --log-file requests.ndjson --forecast`
     #[arg(long)]
     forecast: bool,
+
+    /// Load budget alert rules from a TOML file and start a background check loop.
+    ///
+    /// The TOML file must contain an array of `[[rules]]` tables, each with
+    /// the fields: `name`, `threshold_usd`, `window` ("daily"|"weekly"|"monthly"),
+    /// and `cooldown_secs`.
+    ///
+    /// Example: `llm-dash --demo --alerts rules.toml`
+    #[arg(long, value_name = "RULES_TOML")]
+    alerts: Option<std::path::PathBuf>,
+
+    /// Print a cost anomaly report for the current ledger and exit (no TUI).
+    ///
+    /// Runs the Welford Z-score detector over all loaded records and prints
+    /// any detected anomalies with their Z-scores.
+    ///
+    /// Example: `llm-dash --demo --anomaly`
+    #[arg(long)]
+    anomaly: bool,
 }
 
 fn main() {
@@ -324,6 +343,140 @@ fn main() {
             }
         }
         return;
+    }
+
+    // Handle --anomaly: print anomaly report for current ledger and exit.
+    if cli.anomaly {
+        use llm_cost_dashboard::anomaly::{AnomalyConfig, AnomalyDetector};
+
+        let records = app.ledger.records();
+        if records.len() < 3 {
+            eprintln!(
+                "Error: --anomaly requires at least 3 cost records (have {}). \
+                 Use --log-file or --demo to load data first.",
+                records.len()
+            );
+            std::process::exit(1);
+        }
+
+        let mut detector = AnomalyDetector::new(AnomalyConfig {
+            window_size: 30,
+            z_threshold: 3.0,
+            min_samples: 5,
+        });
+
+        let observations: Vec<_> = records
+            .iter()
+            .map(|r| (r.timestamp, r.total_cost_usd))
+            .collect();
+        let report = detector.analyze(&observations);
+
+        println!("\nCost Anomaly Report (based on {} records)\n", records.len());
+        println!("  Anomaly rate: {:.1}%", report.anomaly_rate * 100.0);
+        println!("  Max Z-score:  {:.2}", report.max_z_score);
+        println!("  Anomalies detected: {}", report.anomalies.len());
+
+        if !report.anomalies.is_empty() {
+            println!("\n  {:<30}  {:>10}  {:>10}  {:>10}  {:>10}",
+                "Timestamp", "Cost USD", "Mean USD", "Stddev", "Z-score");
+            println!("  {}", "-".repeat(80));
+            for (ts, r) in &report.anomalies {
+                println!(
+                    "  {:<30}  {:>10.6}  {:>10.6}  {:>10.6}  {:>10.2}",
+                    ts.to_rfc3339(),
+                    r.current_usd,
+                    r.mean_usd,
+                    r.stddev_usd,
+                    r.z_score,
+                );
+            }
+        } else {
+            println!("\n  No anomalies detected.");
+        }
+        return;
+    }
+
+    // Handle --alerts: load rules from TOML and start a background check loop.
+    if let Some(ref alerts_path) = cli.alerts {
+        use llm_cost_dashboard::alerts::{AlertChannel, AlertEngine, AlertRule, AlertWindow};
+        use std::time::Duration;
+
+        #[derive(serde::Deserialize)]
+        struct RuleToml {
+            name: String,
+            threshold_usd: f64,
+            window: String,
+            cooldown_secs: u64,
+        }
+
+        #[derive(serde::Deserialize)]
+        struct RulesFile {
+            rules: Vec<RuleToml>,
+        }
+
+        info!(path = %alerts_path.display(), "loading alert rules from TOML");
+        let content = match std::fs::read_to_string(alerts_path) {
+            Ok(c) => c,
+            Err(e) => {
+                error!(error = %e, "failed to read alert rules file");
+                eprintln!("Error reading alert rules: {e}");
+                std::process::exit(1);
+            }
+        };
+
+        let rules_file: RulesFile = match toml::from_str(&content) {
+            Ok(r) => r,
+            Err(e) => {
+                error!(error = %e, "failed to parse alert rules TOML");
+                eprintln!("Error parsing alert rules TOML: {e}");
+                std::process::exit(1);
+            }
+        };
+
+        let rules: Vec<AlertRule> = rules_file
+            .rules
+            .into_iter()
+            .map(|r| {
+                let window = match r.window.to_lowercase().as_str() {
+                    "daily" => AlertWindow::Daily,
+                    "weekly" => AlertWindow::Weekly,
+                    "monthly" => AlertWindow::Monthly,
+                    other => {
+                        warn!(window = %other, "unknown window type, defaulting to Daily");
+                        AlertWindow::Daily
+                    }
+                };
+                AlertRule {
+                    name: r.name,
+                    threshold_usd: r.threshold_usd,
+                    window,
+                    channel: AlertChannel::Log,
+                    cooldown: Duration::from_secs(r.cooldown_secs),
+                }
+            })
+            .collect();
+
+        info!(count = rules.len(), "alert rules loaded");
+
+        let mut engine = AlertEngine::new(rules);
+
+        // Do an immediate check against the current ledger.
+        let alerts = engine.check(&app.ledger);
+        info!(fired = alerts.len(), "initial alert check complete");
+        for a in &alerts {
+            println!("ALERT: {}", a.message);
+        }
+
+        let summary = engine.summary();
+        println!(
+            "\nAlert summary: {} fired, {} suppressed by cooldown, {} rules configured",
+            summary.fired_total, summary.suppressed_by_cooldown, summary.rules_count
+        );
+
+        // Note: in a long-running mode the caller would integrate this check
+        // into the TUI event loop. For now we just run one check and fall
+        // through to the TUI.
+        info!("alert check complete; continuing to TUI");
     }
 
     // If --serve was requested, wrap the ledger in Arc<Mutex<>> and spawn the

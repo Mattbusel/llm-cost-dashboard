@@ -40,6 +40,7 @@
 //! - [rot-signals-api](https://github.com/Mattbusel/rot-signals-api)
 
 pub mod alerting;
+pub mod alerts;
 pub mod allocation;
 pub mod anomaly;
 pub mod api;
@@ -89,3 +90,5 @@ pub use allocation::{
     TeamUsage, teams_tab_rows,
 };
 pub use trends::{DailySpend, TrendAnalyzer, TrendReport};
+pub use alerts::{Alert, AlertChannel, AlertEngine, AlertRule, AlertSummary, AlertWindow};
+pub use anomaly::{AnomalyConfig, AnomalyDetector, AnomalyReport, AnomalyResult};

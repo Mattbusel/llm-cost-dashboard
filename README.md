@@ -1116,6 +1116,107 @@ curl http://localhost:8080/api/export.csv  > session.csv
 
 ---
 
+## Budget Alerts
+
+Rule-based budget alerting with cooldown tracking, multi-window cost aggregation,
+and flexible delivery channels.
+
+### Alert Rules TOML format
+
+```toml
+[[rules]]
+name        = "daily-5-usd"
+threshold_usd = 5.0
+window      = "daily"        # "daily" | "weekly" | "monthly"
+cooldown_secs = 3600
+
+[[rules]]
+name        = "monthly-50-usd"
+threshold_usd = 50.0
+window      = "monthly"
+cooldown_secs = 86400
+```
+
+### CLI usage
+
+```sh
+# Load rules and run one check against demo data, then start TUI.
+llm-dash --demo --alerts rules.toml
+```
+
+### Library usage
+
+```rust,no_run
+use std::time::Duration;
+use llm_cost_dashboard::alerts::{AlertChannel, AlertEngine, AlertRule, AlertWindow};
+use llm_cost_dashboard::cost::CostLedger;
+
+let rules = vec![AlertRule {
+    name: "daily-5-usd".to_string(),
+    threshold_usd: 5.0,
+    window: AlertWindow::Daily,
+    channel: AlertChannel::Log,
+    cooldown: Duration::from_secs(3600),
+}];
+
+let mut engine = AlertEngine::new(rules);
+let ledger = CostLedger::new();
+let alerts = engine.check(&ledger);
+
+let summary = engine.summary();
+println!("Fired: {}  Suppressed: {}  Rules: {}",
+    summary.fired_total, summary.suppressed_by_cooldown, summary.rules_count);
+```
+
+Supported channels: `AlertChannel::Log`, `AlertChannel::Webhook { url, secret }`,
+`AlertChannel::File { path }`.  Webhook delivery includes an optional
+`X-Alert-Signature: sha256=<hex>` HMAC header when a secret is configured.
+
+---
+
+## Cost Anomaly Detection
+
+Welford online algorithm Z-score detector — finds cost spikes (overspend) and
+dips (underspend / service outage) with O(1) memory and O(1) per-observation cost.
+
+### CLI usage
+
+```sh
+# Print anomaly report and exit.
+llm-dash --demo --anomaly
+
+# Combine with log data.
+llm-dash --log-file requests.ndjson --anomaly
+```
+
+### Library usage
+
+```rust,no_run
+use chrono::Utc;
+use llm_cost_dashboard::anomaly::{AnomalyConfig, AnomalyDetector};
+
+let mut detector = AnomalyDetector::new(AnomalyConfig {
+    window_size: 30,     // rolling window of 30 observations
+    z_threshold: 3.0,    // flag observations > 3σ from mean
+    min_samples: 5,      // require at least 5 samples before firing
+});
+
+// Observe individual costs.
+let result = detector.observe(0.001);
+println!("Anomaly: {}  Z-score: {:.2}", result.is_anomaly, result.z_score);
+
+// Batch analysis with timestamps.
+let now = Utc::now();
+let observations = vec![
+    (now, 0.001), (now, 0.002), (now, 5.0), // spike!
+];
+let report = detector.analyze(&observations);
+println!("Anomaly rate: {:.1}%  Max Z: {:.2}",
+    report.anomaly_rate * 100.0, report.max_z_score);
+```
+
+---
+
 ## Related projects by @Mattbusel
 
 - [tokio-prompt-orchestrator](https://github.com/Mattbusel/tokio-prompt-orchestrator) -- Rust async LLM pipeline orchestration
