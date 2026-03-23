@@ -107,3 +107,5 @@ pub mod webhook_dispatch;
 pub mod aggregator;
 pub mod billing;
 pub mod capacity;
+pub mod visualization;
+pub mod alert_rules;
