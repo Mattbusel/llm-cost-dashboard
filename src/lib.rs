@@ -119,3 +119,5 @@ pub mod usage_limiter;
 pub mod cost_allocation;
 pub mod price_tracker;
 pub mod efficiency_analyzer;
+pub mod model_lifecycle;
+pub mod roi_calculator;
