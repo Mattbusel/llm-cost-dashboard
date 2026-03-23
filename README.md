@@ -16,6 +16,40 @@ Structured logging via [tracing](https://tracing.rs). No database. No network. N
 
 ## What's New
 
+### Cost Prediction Engine
+
+The new `prediction` module provides a 24×7 pattern-matrix cost predictor trained on historical [`TaggedRequest`] data.
+
+**Key types:** `CostPredictor`, `UsagePattern`, `PatternMatrix`, `WeeklyHeatmap`
+
+**Features:**
+- `CostPredictor::learn(requests)` — fills the 168-cell pattern matrix using online mean updates (Welford algorithm); multiple calls are additive
+- `CostPredictor::predict_next_hour()` — looks up the current UTC (hour, day-of-week) cell
+- `CostPredictor::predict_next_n_hours(n)` — rolling predictions for the next N hours as `Vec<(DateTime<Utc>, f64)>`
+- `CostPredictor::confidence(hour, day)` — returns `min(1.0, sample_count / 10.0)`; low-sample cells are flagged as low-confidence
+- `WeeklyHeatmap::render_ascii()` — prints a 7×24 ASCII grid using block intensity characters (`.`, `░`, `▒`, `▓`, `█`, `■`)
+
+### Cost Diff Reporter
+
+The new `diff` module compares two named `PeriodSnapshot`s and renders a Markdown diff report.
+
+**Key types:** `CostDiff`, `PeriodSnapshot`, `DiffReport`, `ModelDiff`
+
+**Features:**
+- `CostDiff::compare(baseline, current)` — computes absolute/percentage change, new/removed models, per-model diffs sorted by magnitude
+- `DiffReport::render_markdown()` — formatted Markdown table with ↑↓ arrows and per-model breakdown section
+- **CLI:** `llm-dash --diff <period1> <period2>` — loads log/demo data, buckets by date prefix, and prints the Markdown diff
+
+```
+$ llm-dash --demo --diff 2024-01-01 2024-01-08
+## Cost Diff: 2024-01-01 → 2024-01-08
+
+| Metric | Baseline | Current | Change |
+|--------|----------|---------|--------|
+| Total cost | $10.2340 | $14.8900 | ↑ $4.6560 (+45.5%) |
+...
+```
+
 ### Budget Planner
 
 The new `budget::planner` module provides period-aware budget planning with percentage-based allocation splits, reconciliation against actuals, and linear spend forecasting.

@@ -139,6 +139,20 @@ struct Cli {
     /// Example: `llm-dash --demo --anomaly`
     #[arg(long)]
     anomaly: bool,
+
+    /// Compare costs between two named time periods and exit (no TUI).
+    ///
+    /// Accepts exactly two period labels.  Each label must correspond to a
+    /// suffix of a record's timestamp formatted as `YYYY-MM-DD`.  The
+    /// baseline is the first argument and the current period the second.
+    ///
+    /// The comparison is performed over the loaded log file or demo data.
+    /// Records whose date string starts with the given prefix are bucketed
+    /// into that period.
+    ///
+    /// Example: `llm-dash --demo --diff 2024-01-01 2024-01-08`
+    #[arg(long, value_name = "PERIOD", num_args = 2)]
+    diff: Option<Vec<String>>,
 }
 
 fn main() {
@@ -468,6 +482,44 @@ fn main() {
         } else {
             println!("\n  No anomalies detected.");
         }
+        return;
+    }
+
+    // Handle --diff: compare two time-period cost snapshots and exit.
+    if let Some(ref periods) = cli.diff {
+        use llm_cost_dashboard::diff::{CostDiff, PeriodSnapshot};
+
+        let period1 = periods[0].trim().to_string();
+        let period2 = periods[1].trim().to_string();
+
+        // Build snapshots by partitioning records whose date prefix matches.
+        let records = app.ledger.records();
+
+        let mut build_snapshot = |label: &str| -> PeriodSnapshot {
+            let mut total = 0.0_f64;
+            let mut by_model: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+            let mut request_count = 0u64;
+            for r in records {
+                let date_str = r.timestamp.format("%Y-%m-%d").to_string();
+                if date_str.starts_with(label) {
+                    total += r.total_cost_usd;
+                    *by_model.entry(r.model.clone()).or_default() += r.total_cost_usd;
+                    request_count += 1;
+                }
+            }
+            PeriodSnapshot {
+                period: label.to_string(),
+                total_cost_usd: total,
+                by_model,
+                request_count,
+            }
+        };
+
+        let baseline = build_snapshot(&period1);
+        let current = build_snapshot(&period2);
+
+        let report = CostDiff::compare(&baseline, &current);
+        println!("{}", report.render_markdown());
         return;
     }
 

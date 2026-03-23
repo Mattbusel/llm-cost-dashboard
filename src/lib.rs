@@ -66,6 +66,8 @@ pub mod clustering;
 pub mod sla;
 pub mod carbon;
 pub mod tenant;
+pub mod prediction;
+pub mod diff;
 
 pub use budget::{
     BudgetAlert, BudgetEnvelope, OrgSummary, OrgTree, ProjectConfig, ProjectSummary, TeamConfig,
