@@ -1,282 +1,220 @@
-//! Latency and throughput benchmarking with statistics.
+//! Model comparison benchmarking.
+//!
+//! [`BenchmarkSuite`] collects [`BenchmarkResult`] records from external
+//! runners, computes per-model statistics (latency percentiles, cost,
+//! quality, throughput), and produces a Markdown comparison table.
 
 use std::collections::HashMap;
-use std::time::Instant;
+
+// ── BenchmarkConfig ───────────────────────────────────────────────────────────
 
 /// Configuration for a benchmark run.
 #[derive(Debug, Clone)]
 pub struct BenchmarkConfig {
-    /// Human-readable name for the benchmark.
-    pub name: String,
-    /// Number of warmup iterations (results discarded).
-    pub warmup_iterations: u32,
-    /// Number of measurement iterations.
-    pub measurement_iterations: u32,
-    /// Per-iteration timeout in milliseconds.
-    pub timeout_ms: u64,
+    /// Model identifiers to benchmark.
+    pub model_ids: Vec<String>,
+    /// Prompt template strings used as inputs.
+    pub prompt_templates: Vec<String>,
+    /// Number of measurement iterations per (model, prompt) pair.
+    pub iterations: u32,
+    /// Number of warm-up rounds whose results are discarded.
+    pub warmup_rounds: u32,
 }
 
-/// A single latency observation.
+// ── BenchmarkResult ───────────────────────────────────────────────────────────
+
+/// A single benchmark observation.
 #[derive(Debug, Clone)]
-pub struct LatencySample {
-    /// Zero-based iteration index.
-    pub iteration: u32,
-    /// Elapsed time in microseconds.
-    pub duration_us: u64,
-    /// Whether the iteration succeeded.
-    pub success: bool,
-    /// Error message if the iteration failed.
-    pub error: Option<String>,
+pub struct BenchmarkResult {
+    /// Model that produced this result.
+    pub model_id: String,
+    /// Zero-based index into [`BenchmarkConfig::prompt_templates`].
+    pub prompt_idx: usize,
+    /// End-to-end latency in milliseconds.
+    pub latency_ms: f64,
+    /// Input token count.
+    pub tokens_in: u32,
+    /// Output token count.
+    pub tokens_out: u32,
+    /// USD cost for this call.
+    pub cost_usd: f64,
+    /// Quality score in `[0.0, 1.0]`.
+    pub quality_score: f64,
 }
 
-/// Aggregated statistics for a benchmark.
+// ── ModelStats ────────────────────────────────────────────────────────────────
+
+/// Aggregated statistics for a single model across all benchmark results.
 #[derive(Debug, Clone)]
-pub struct BenchmarkStats {
-    /// Benchmark name.
-    pub name: String,
-    /// Minimum latency in microseconds.
-    pub min_us: u64,
-    /// Maximum latency in microseconds.
-    pub max_us: u64,
-    /// Mean latency in microseconds.
-    pub mean_us: f64,
-    /// Median latency in microseconds.
-    pub median_us: f64,
-    /// 95th-percentile latency in microseconds.
-    pub p95_us: f64,
-    /// 99th-percentile latency in microseconds.
-    pub p99_us: f64,
-    /// Standard deviation of latency in microseconds.
-    pub std_dev_us: f64,
-    /// Total number of samples (including failures).
-    pub samples: usize,
-    /// Fraction of iterations that succeeded.
-    pub success_rate: f64,
-    /// Estimated throughput in requests per second.
-    pub throughput_rps: f64,
+pub struct ModelStats {
+    /// Model identifier.
+    pub model_id: String,
+    /// Median (p50) latency in milliseconds.
+    pub p50_latency: f64,
+    /// 95th-percentile latency in milliseconds.
+    pub p95_latency: f64,
+    /// 99th-percentile latency in milliseconds.
+    pub p99_latency: f64,
+    /// Mean USD cost per call.
+    pub avg_cost: f64,
+    /// Mean quality score.
+    pub avg_quality: f64,
+    /// Throughput in tokens per second (output tokens / total latency).
+    pub throughput_tps: f64,
 }
 
-/// Comparison of two benchmark results.
-#[derive(Debug, Clone)]
-pub struct BenchmarkComparison {
-    /// Name of the faster benchmark.
-    pub faster: String,
-    /// Ratio of the slower mean to the faster mean.
-    pub speedup_factor: f64,
-    /// Difference between mean latencies (a.mean_us - b.mean_us).
-    pub mean_diff_us: f64,
-    /// True when the p95 latency ranges do not overlap.
-    pub is_significant: bool,
-}
-
-/// Runs and stores benchmark samples.
-pub struct BenchmarkRunner {
-    /// Stored samples keyed by benchmark name.
-    pub results: HashMap<String, Vec<LatencySample>>,
-}
-
-impl BenchmarkRunner {
-    /// Create a new `BenchmarkRunner`.
-    pub fn new() -> Self {
-        Self {
-            results: HashMap::new(),
-        }
-    }
-
-    /// Add a single sample for the named benchmark.
-    pub fn add_sample(&mut self, name: &str, sample: LatencySample) {
-        self.results.entry(name.to_string()).or_default().push(sample);
-    }
-
-    /// Linear-interpolation percentile over a sorted slice.
-    pub fn percentile(sorted_values: &[u64], pct: f64) -> u64 {
-        if sorted_values.is_empty() {
-            return 0;
-        }
-        if sorted_values.len() == 1 {
-            return sorted_values[0];
-        }
-        let index = pct / 100.0 * (sorted_values.len() - 1) as f64;
-        let lo = index.floor() as usize;
-        let hi = index.ceil() as usize;
-        if lo == hi {
-            return sorted_values[lo];
-        }
-        let frac = index - lo as f64;
-        let lo_val = sorted_values[lo] as f64;
-        let hi_val = sorted_values[hi] as f64;
-        (lo_val + frac * (hi_val - lo_val)).round() as u64
-    }
-
-    /// Compute stats from the stored samples for the named benchmark.
-    pub fn compute_stats(&self, name: &str) -> Option<BenchmarkStats> {
-        let samples = self.results.get(name)?;
-        if samples.is_empty() {
-            return None;
+impl ModelStats {
+    /// Compute statistics for `model_id` from a slice of results.
+    ///
+    /// Returns a zero-value [`ModelStats`] if `results` is empty.
+    pub fn from_results(model_id: &str, results: &[BenchmarkResult]) -> Self {
+        if results.is_empty() {
+            return Self {
+                model_id: model_id.to_owned(),
+                p50_latency: 0.0,
+                p95_latency: 0.0,
+                p99_latency: 0.0,
+                avg_cost: 0.0,
+                avg_quality: 0.0,
+                throughput_tps: 0.0,
+            };
         }
 
-        let total = samples.len();
-        let success_count = samples.iter().filter(|s| s.success).count();
-        let success_rate = success_count as f64 / total as f64;
+        let n = results.len();
 
-        // Work only on successful durations for latency stats
-        let mut durations: Vec<u64> = samples.iter()
-            .filter(|s| s.success)
-            .map(|s| s.duration_us)
-            .collect();
+        // Latency percentiles
+        let mut latencies: Vec<f64> = results.iter().map(|r| r.latency_ms).collect();
+        latencies.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
-        if durations.is_empty() {
-            return Some(BenchmarkStats {
-                name: name.to_string(),
-                min_us: 0,
-                max_us: 0,
-                mean_us: 0.0,
-                median_us: 0.0,
-                p95_us: 0.0,
-                p99_us: 0.0,
-                std_dev_us: 0.0,
-                samples: total,
-                success_rate,
-                throughput_rps: 0.0,
-            });
-        }
+        let percentile = |p: f64| -> f64 {
+            let idx = ((p / 100.0) * (n as f64 - 1.0)).round() as usize;
+            latencies[idx.min(n - 1)]
+        };
 
-        durations.sort_unstable();
-        let n = durations.len();
-        let min_us = durations[0];
-        let max_us = durations[n - 1];
-        let mean_us = durations.iter().sum::<u64>() as f64 / n as f64;
-        let median_us = Self::percentile(&durations, 50.0) as f64;
-        let p95_us = Self::percentile(&durations, 95.0) as f64;
-        let p99_us = Self::percentile(&durations, 99.0) as f64;
-        let variance = durations.iter()
-            .map(|&d| (d as f64 - mean_us).powi(2))
-            .sum::<f64>()
-            / n as f64;
-        let std_dev_us = variance.sqrt();
+        let p50 = percentile(50.0);
+        let p95 = percentile(95.0);
+        let p99 = percentile(99.0);
 
-        // Throughput: success_count / total_time_seconds
-        let total_us: u64 = durations.iter().sum();
-        let throughput_rps = if total_us > 0 {
-            success_count as f64 / (total_us as f64 / 1_000_000.0)
+        let avg_cost = results.iter().map(|r| r.cost_usd).sum::<f64>() / n as f64;
+        let avg_quality = results.iter().map(|r| r.quality_score).sum::<f64>() / n as f64;
+
+        // Throughput: total output tokens / total latency in seconds
+        let total_tokens_out: f64 = results.iter().map(|r| r.tokens_out as f64).sum();
+        let total_latency_s: f64 = results.iter().map(|r| r.latency_ms / 1_000.0).sum();
+        let throughput_tps = if total_latency_s > 0.0 {
+            total_tokens_out / total_latency_s
         } else {
             0.0
         };
 
-        Some(BenchmarkStats {
-            name: name.to_string(),
-            min_us,
-            max_us,
-            mean_us,
-            median_us,
-            p95_us,
-            p99_us,
-            std_dev_us,
-            samples: total,
-            success_rate,
-            throughput_rps,
-        })
-    }
-
-    /// Run a benchmark: first warmup iterations (not recorded), then measurement iterations.
-    pub fn run_benchmark<F: Fn(u32) -> Result<(), String>>(
-        &mut self,
-        config: BenchmarkConfig,
-        f: F,
-    ) -> BenchmarkStats {
-        // Warmup
-        for i in 0..config.warmup_iterations {
-            let _ = f(i);
+        Self {
+            model_id: model_id.to_owned(),
+            p50_latency: p50,
+            p95_latency: p95,
+            p99_latency: p99,
+            avg_cost,
+            avg_quality,
+            throughput_tps,
         }
-
-        // Measurement
-        for i in 0..config.measurement_iterations {
-            let start = Instant::now();
-            let result = f(i);
-            let elapsed_us = start.elapsed().as_micros() as u64;
-            let success = result.is_ok();
-            let error = result.err();
-            self.add_sample(&config.name, LatencySample {
-                iteration: i,
-                duration_us: elapsed_us,
-                success,
-                error,
-            });
-        }
-
-        self.compute_stats(&config.name).unwrap_or(BenchmarkStats {
-            name: config.name,
-            min_us: 0,
-            max_us: 0,
-            mean_us: 0.0,
-            median_us: 0.0,
-            p95_us: 0.0,
-            p99_us: 0.0,
-            std_dev_us: 0.0,
-            samples: 0,
-            success_rate: 0.0,
-            throughput_rps: 0.0,
-        })
-    }
-
-    /// Compare two benchmark stats and determine which is faster.
-    pub fn compare(a: &BenchmarkStats, b: &BenchmarkStats) -> BenchmarkComparison {
-        let mean_diff_us = a.mean_us - b.mean_us;
-        let (faster, speedup_factor) = if a.mean_us <= b.mean_us {
-            let factor = if a.mean_us > 0.0 { b.mean_us / a.mean_us } else { 1.0 };
-            (a.name.clone(), factor)
-        } else {
-            let factor = if b.mean_us > 0.0 { a.mean_us / b.mean_us } else { 1.0 };
-            (b.name.clone(), factor)
-        };
-
-        // Significant if p95 ranges don't overlap
-        let a_p95_lo = a.mean_us - a.p95_us;
-        let a_p95_hi = a.p95_us;
-        let b_p95_lo = b.mean_us - b.p95_us;
-        let b_p95_hi = b.p95_us;
-        let is_significant = a_p95_hi < b_p95_lo || b_p95_hi < a_p95_lo;
-
-        BenchmarkComparison {
-            faster,
-            speedup_factor,
-            mean_diff_us,
-            is_significant,
-        }
-    }
-
-    /// Generate a markdown table report of all benchmarks.
-    pub fn suite_report(&self) -> String {
-        let mut out = String::new();
-        out.push_str("| Name | Samples | Mean (us) | Median (us) | P95 (us) | P99 (us) | Std Dev (us) | Success Rate | Throughput (rps) |\n");
-        out.push_str("|------|---------|-----------|-------------|----------|----------|--------------|--------------|------------------|\n");
-
-        let mut names: Vec<&String> = self.results.keys().collect();
-        names.sort();
-
-        for name in names {
-            if let Some(stats) = self.compute_stats(name) {
-                out.push_str(&format!(
-                    "| {} | {} | {:.1} | {:.1} | {:.1} | {:.1} | {:.1} | {:.2}% | {:.2} |\n",
-                    stats.name,
-                    stats.samples,
-                    stats.mean_us,
-                    stats.median_us,
-                    stats.p95_us,
-                    stats.p99_us,
-                    stats.std_dev_us,
-                    stats.success_rate * 100.0,
-                    stats.throughput_rps,
-                ));
-            }
-        }
-        out
     }
 }
 
-impl Default for BenchmarkRunner {
-    fn default() -> Self {
-        Self::new()
+// ── BenchmarkSuite ────────────────────────────────────────────────────────────
+
+/// Container for benchmark results and cached per-model statistics.
+pub struct BenchmarkSuite {
+    /// Benchmark configuration.
+    pub config: BenchmarkConfig,
+    /// Raw result records.
+    pub results: Vec<BenchmarkResult>,
+    /// Cached per-model statistics (populated by [`BenchmarkSuite::compute_stats`]).
+    pub stats_cache: HashMap<String, ModelStats>,
+}
+
+impl BenchmarkSuite {
+    /// Create an empty suite with the given configuration.
+    pub fn new(config: BenchmarkConfig) -> Self {
+        Self {
+            config,
+            results: Vec::new(),
+            stats_cache: HashMap::new(),
+        }
+    }
+
+    /// Append a single benchmark result and invalidate the stats cache.
+    pub fn add_result(&mut self, r: BenchmarkResult) {
+        self.stats_cache.clear();
+        self.results.push(r);
+    }
+
+    /// (Re-)compute per-model statistics and populate `stats_cache`.
+    pub fn compute_stats(&mut self) {
+        self.stats_cache.clear();
+        let mut by_model: HashMap<String, Vec<BenchmarkResult>> = HashMap::new();
+        for r in &self.results {
+            by_model.entry(r.model_id.clone()).or_default().push(r.clone());
+        }
+        for (model_id, model_results) in &by_model {
+            let stats = ModelStats::from_results(model_id, model_results);
+            self.stats_cache.insert(model_id.clone(), stats);
+        }
+    }
+
+    /// Return all model statistics sorted by p95 latency (ascending).
+    ///
+    /// Calls [`BenchmarkSuite::compute_stats`] if the cache is stale.
+    pub fn compare_models(&mut self) -> Vec<ModelStats> {
+        if self.stats_cache.is_empty() && !self.results.is_empty() {
+            self.compute_stats();
+        }
+        let mut stats: Vec<ModelStats> = self.stats_cache.values().cloned().collect();
+        stats.sort_by(|a, b| {
+            a.p95_latency
+                .partial_cmp(&b.p95_latency)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        stats
+    }
+
+    /// Return the most cost-efficient model whose average quality exceeds 0.8.
+    ///
+    /// Returns `None` if no qualifying model exists.
+    pub fn winner_by_cost_efficiency(&self) -> Option<&ModelStats> {
+        self.stats_cache
+            .values()
+            .filter(|s| s.avg_quality > 0.8)
+            .min_by(|a, b| {
+                a.avg_cost
+                    .partial_cmp(&b.avg_cost)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+    }
+
+    /// Generate a Markdown comparison table of all models.
+    pub fn report(&self) -> String {
+        let mut stats: Vec<&ModelStats> = self.stats_cache.values().collect();
+        stats.sort_by(|a, b| {
+            a.p95_latency
+                .partial_cmp(&b.p95_latency)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        let mut out = String::new();
+        out.push_str("| Model | p50 ms | p95 ms | p99 ms | Avg Cost USD | Avg Quality | TPS |\n");
+        out.push_str("|-------|--------|--------|--------|-------------|-------------|-----|\n");
+        for s in &stats {
+            out.push_str(&format!(
+                "| {} | {:.1} | {:.1} | {:.1} | {:.6} | {:.3} | {:.1} |\n",
+                s.model_id,
+                s.p50_latency,
+                s.p95_latency,
+                s.p99_latency,
+                s.avg_cost,
+                s.avg_quality,
+                s.throughput_tps
+            ));
+        }
+        out
     }
 }
 
@@ -284,68 +222,69 @@ impl Default for BenchmarkRunner {
 mod tests {
     use super::*;
 
-    fn make_samples(durations: &[u64]) -> Vec<LatencySample> {
-        durations.iter().enumerate().map(|(i, &d)| LatencySample {
-            iteration: i as u32,
-            duration_us: d,
-            success: true,
-            error: None,
-        }).collect()
-    }
-
-    #[test]
-    fn test_percentile_at_known_positions() {
-        let values = vec![1u64, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        assert_eq!(BenchmarkRunner::percentile(&values, 0.0), 1);
-        assert_eq!(BenchmarkRunner::percentile(&values, 100.0), 10);
-        let p50 = BenchmarkRunner::percentile(&values, 50.0);
-        assert!(p50 >= 5 && p50 <= 6, "p50 should be 5 or 6, got {}", p50);
-    }
-
-    #[test]
-    fn test_compute_stats_from_samples() {
-        let mut runner = BenchmarkRunner::new();
-        for s in make_samples(&[100, 200, 300, 400, 500]) {
-            runner.add_sample("test", s);
+    fn make_result(model: &str, latency: f64, cost: f64, quality: f64) -> BenchmarkResult {
+        BenchmarkResult {
+            model_id: model.to_owned(),
+            prompt_idx: 0,
+            latency_ms: latency,
+            tokens_in: 100,
+            tokens_out: 50,
+            cost_usd: cost,
+            quality_score: quality,
         }
-        let stats = runner.compute_stats("test").unwrap();
-        assert_eq!(stats.samples, 5);
-        assert_eq!(stats.min_us, 100);
-        assert_eq!(stats.max_us, 500);
-        assert!((stats.mean_us - 300.0).abs() < 1.0);
-        assert!((stats.success_rate - 1.0).abs() < 1e-9);
     }
 
     #[test]
-    fn test_comparison_finds_faster() {
-        let a = BenchmarkStats {
-            name: "fast".to_string(),
-            min_us: 10, max_us: 50, mean_us: 20.0, median_us: 20.0,
-            p95_us: 45.0, p99_us: 50.0, std_dev_us: 5.0,
-            samples: 100, success_rate: 1.0, throughput_rps: 50000.0,
-        };
-        let b = BenchmarkStats {
-            name: "slow".to_string(),
-            min_us: 100, max_us: 500, mean_us: 200.0, median_us: 200.0,
-            p95_us: 450.0, p99_us: 500.0, std_dev_us: 50.0,
-            samples: 100, success_rate: 1.0, throughput_rps: 5000.0,
-        };
-        let cmp = BenchmarkRunner::compare(&a, &b);
-        assert_eq!(cmp.faster, "fast");
-        assert!(cmp.speedup_factor > 1.0);
+    fn model_stats_percentiles() {
+        let results: Vec<BenchmarkResult> =
+            (1..=10).map(|i| make_result("m", i as f64 * 10.0, 0.01, 0.9)).collect();
+        let stats = ModelStats::from_results("m", &results);
+        assert_eq!(stats.p50_latency, 50.0);
+        assert_eq!(stats.p95_latency, 100.0);
     }
 
     #[test]
-    fn test_run_benchmark_populates_results() {
-        let mut runner = BenchmarkRunner::new();
-        let config = BenchmarkConfig {
-            name: "noop".to_string(),
-            warmup_iterations: 2,
-            measurement_iterations: 10,
-            timeout_ms: 5000,
+    fn suite_compare_and_winner() {
+        let cfg = BenchmarkConfig {
+            model_ids: vec!["a".into(), "b".into()],
+            prompt_templates: vec!["hello".into()],
+            iterations: 5,
+            warmup_rounds: 1,
         };
-        let stats = runner.run_benchmark(config, |_| Ok(()));
-        assert_eq!(stats.samples, 10);
-        assert_eq!(stats.success_rate, 1.0);
+        let mut suite = BenchmarkSuite::new(cfg);
+        // Model "a": higher quality, higher cost
+        for _ in 0..5 {
+            suite.add_result(make_result("a", 100.0, 0.05, 0.95));
+        }
+        // Model "b": lower quality (below 0.8), lower cost
+        for _ in 0..5 {
+            suite.add_result(make_result("b", 50.0, 0.01, 0.7));
+        }
+        suite.compute_stats();
+
+        // compare_models returns sorted by p95 latency; "b" is faster
+        let ranked = suite.compare_models();
+        assert_eq!(ranked[0].model_id, "b");
+
+        // winner_by_cost_efficiency: only "a" has quality > 0.8
+        let winner = suite.winner_by_cost_efficiency();
+        assert!(winner.is_some());
+        assert_eq!(winner.unwrap().model_id, "a");
+    }
+
+    #[test]
+    fn report_contains_header() {
+        let cfg = BenchmarkConfig {
+            model_ids: vec!["x".into()],
+            prompt_templates: vec![],
+            iterations: 1,
+            warmup_rounds: 0,
+        };
+        let mut suite = BenchmarkSuite::new(cfg);
+        suite.add_result(make_result("x", 200.0, 0.02, 0.88));
+        suite.compute_stats();
+        let report = suite.report();
+        assert!(report.contains("| Model |"));
+        assert!(report.contains("x"));
     }
 }
