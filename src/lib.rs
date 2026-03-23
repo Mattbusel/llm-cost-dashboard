@@ -70,6 +70,8 @@ pub mod prediction;
 pub mod diff;
 pub mod model_compare;
 pub mod trend;
+pub mod quota;
+pub mod replay;
 
 pub use budget::{
     BudgetAlert, BudgetEnvelope, OrgSummary, OrgTree, ProjectConfig, ProjectSummary, TeamConfig,
