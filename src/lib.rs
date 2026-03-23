@@ -129,3 +129,5 @@ pub mod anomaly_detector;
 pub mod budget_planner;
 pub mod usage_reporter;
 pub mod cost_allocator_v2;
+pub mod pricing_engine;
+pub mod audit_logger;
