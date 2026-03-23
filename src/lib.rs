@@ -139,3 +139,5 @@ pub mod alert_manager;
 pub mod dashboard_metrics;
 pub mod trend_analyzer;
 pub mod cost_attribution;
+pub mod capacity_planner;
+pub mod sla_monitor;
