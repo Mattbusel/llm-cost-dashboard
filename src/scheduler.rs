@@ -36,7 +36,7 @@
 //! // In a real application you would call scheduler.tick(&ledger) periodically.
 //! ```
 
-use chrono::{DateTime, Datelike, Timelike, Utc, Weekday};
+use chrono::{DateTime, Datelike, Timelike, Utc};
 
 use crate::cost::CostLedger;
 use crate::error::DashboardError;
