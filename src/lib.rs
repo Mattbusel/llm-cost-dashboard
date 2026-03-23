@@ -131,3 +131,5 @@ pub mod usage_reporter;
 pub mod cost_allocator_v2;
 pub mod pricing_engine;
 pub mod audit_logger;
+pub mod cost_predictor;
+pub mod resource_quota;
