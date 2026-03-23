@@ -125,3 +125,5 @@ pub mod experiment_tracker;
 pub mod cost_governance;
 pub mod invoice_generator;
 pub mod model_registry;
+pub mod anomaly_detector;
+pub mod budget_planner;
