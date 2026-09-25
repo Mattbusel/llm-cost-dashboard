@@ -353,9 +353,9 @@ impl SavingsCalculator {
 
     /// Return opportunities sorted descending by `potential_savings_usd *
     /// confidence`.
-    pub fn prioritized_recommendations<'a>(
-        opportunities: &'a [SavingsOpportunity],
-    ) -> Vec<&'a SavingsOpportunity> {
+    pub fn prioritized_recommendations(
+        opportunities: &[SavingsOpportunity],
+    ) -> Vec<&SavingsOpportunity> {
         let mut refs: Vec<&SavingsOpportunity> = opportunities.iter().collect();
         refs.sort_by(|a, b| {
             let score_a = a.potential_savings_usd * a.confidence;

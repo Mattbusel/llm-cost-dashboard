@@ -234,7 +234,7 @@ impl CostForecaster {
             return vec![0.0; horizon];
         }
         if n == 1 {
-            return std::iter::repeat(data[0]).take(1 + horizon).collect();
+            return std::iter::repeat_n(data[0], 1 + horizon).collect();
         }
 
         let n_f = n as f64;

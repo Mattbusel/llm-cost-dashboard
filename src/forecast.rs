@@ -449,14 +449,29 @@ impl CostForecaster {
             return None;
         }
 
+        // Sort by time and merge observations that share a timestamp (within
+        // 1 ms), keeping the larger cumulative value.  Dividing by a zero time
+        // gap used to turn the whole forecast into infinity.
+        let mut sorted = self.observations.clone();
+        sorted.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        let mut obs: Vec<(f64, f64)> = Vec::with_capacity(sorted.len());
+        for (t, c) in sorted {
+            match obs.last_mut() {
+                Some(last) if t - last.0 < 1e-3 => last.1 = last.1.max(c),
+                _ => obs.push((t, c)),
+            }
+        }
+        if obs.len() < 3 {
+            return None;
+        }
+
         // Work in incremental costs (first differences) rather than cumulative,
         // because Holt-Winters level/trend make more sense on rates than on
         // an ever-increasing cumulative series.
-        let increments: Vec<f64> = self
-            .observations
+        let increments: Vec<f64> = obs
             .windows(2)
             .map(|w| {
-                let dt = (w[1].0 - w[0].0).max(f64::EPSILON);
+                let dt = w[1].0 - w[0].0;
                 // Normalise to cost-per-second so unequal intervals cancel out.
                 (w[1].1 - w[0].1) / dt
             })
@@ -494,7 +509,6 @@ impl CostForecaster {
         };
 
         // Typical observation interval in seconds.
-        let obs = &self.observations;
         let n = obs.len();
         let avg_interval_secs = if n >= 2 {
             (obs[n - 1].0 - obs[0].0) / (n - 1) as f64
@@ -515,8 +529,10 @@ impl CostForecaster {
         let steps_week = (week_secs / avg_interval_secs).max(1.0);
         let steps_month = (month_secs / avg_interval_secs).max(1.0);
 
-        // Holt forecast h steps ahead: level + h * trend (still per second).
-        let rate_h = |h: f64| -> f64 { (level + h * trend).max(0.0) };
+        // Holt forecast h steps ahead is level + h * trend (per second).  Spend
+        // over a horizon is the rate integrated across it, i.e. the average
+        // rate over steps 1..=h, not the rate at the far end.
+        let rate_h = |h: f64| -> f64 { (level + (h + 1.0) / 2.0 * trend).max(0.0) };
 
         let next_hour_usd = rate_h(steps_hour) * hour_secs;
         let next_day_usd = rate_h(steps_day) * day_secs;

@@ -352,7 +352,7 @@ impl CohortAnalyzer {
             *model_freq.entry(e.model.as_str()).or_insert(0) += 1;
         }
         let mut model_vec: Vec<(&str, usize)> = model_freq.into_iter().collect();
-        model_vec.sort_by(|a, b| b.1.cmp(&a.1));
+        model_vec.sort_by_key(|x| std::cmp::Reverse(x.1));
         let top_models: Vec<String> = model_vec
             .into_iter()
             .take(3)

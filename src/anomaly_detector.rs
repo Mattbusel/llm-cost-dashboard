@@ -88,8 +88,8 @@ impl ZScoreDetector {
             let n = self.window.len() as f64;
             let mean = self.window.iter().sum::<f64>() / n;
             let variance = self.window.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n;
-            let std_dev = variance.sqrt();
-            if std_dev > f64::EPSILON {
+            let std_dev = crate::anomaly::effective_stddev(variance.sqrt(), mean);
+            {
                 let z = (value - mean).abs() / std_dev;
                 if z > self.threshold {
                     Some(Anomaly {
@@ -105,8 +105,6 @@ impl ZScoreDetector {
                 } else {
                     None
                 }
-            } else {
-                None
             }
         } else {
             None
@@ -249,7 +247,7 @@ impl AnomalyDetector {
     /// available).
     pub fn recent_anomalies(&self, n: usize) -> &[Anomaly] {
         let len = self.anomalies.len();
-        let start = if len > n { len - n } else { 0 };
+        let start = len.saturating_sub(n);
         // VecDeque slices: make_contiguous would require &mut; use as_slices.
         // We convert lazily — caller gets a slice of the backing storage.
         // Because VecDeque may be non-contiguous, we return as many as we can

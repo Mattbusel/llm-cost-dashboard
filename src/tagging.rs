@@ -35,6 +35,9 @@
 //! // Always tag with the environment.
 //! engine.add_default_tag("env", "production");
 //!
+//! // Copy the raw `project` field straight into the tags.
+//! engine.add_passthrough("project");
+//!
 //! // Map model names to cost centres.
 //! engine.add_rule(TagRule {
 //!     field: "model".to_string(),

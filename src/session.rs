@@ -15,7 +15,7 @@
 //! let mut ledger = SessionLedger::new();
 //!
 //! // Register a session with a $0.50 budget.
-//! ledger.register(Session::new("my-experiment", 0.50));
+//! ledger.register(Session::with_budget("my-experiment", 0.50));
 //!
 //! // Record spend against the session.
 //! if let Some(alert) = ledger.record_spend("my-experiment", 0.30) {

@@ -248,7 +248,7 @@ impl CapacityPlanner {
             }
         }
 
-        for (_, metric) in &latest_per_resource {
+        for metric in latest_per_resource.values() {
             if metric.is_constrained() {
                 let forecast = self.forecast(metric.resource.clone(), 30);
                 let msg = match forecast.days_to_capacity {

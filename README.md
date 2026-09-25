@@ -8,15 +8,38 @@ A terminal dashboard for LLM spend: feed it a log of your model calls and see co
 
 Token prices differ by 100x between models, and bills arrive after the fact. `llm-dash` turns a newline-delimited JSON log of requests (model, input tokens, output tokens, latency) into a live [ratatui](https://ratatui.rs) dashboard, and can also answer one-off questions from the command line: which model would be cheapest for this workload, what will this month cost, where are the spikes, what changed between two days. Everything it does is also available as a Rust library.
 
-## Quick start
+## Install
+
+### Download (no Rust needed)
+
+Grab the file for your system from the [latest release](https://github.com/Mattbusel/llm-cost-dashboard/releases/latest), unzip it, and run `llm-dash` from a terminal:
+
+| System | File |
+|---|---|
+| Windows (64-bit) | `llm-cost-dashboard-vX.Y.Z-x86_64-pc-windows-msvc.zip` (contains `llm-dash.exe`) |
+| macOS, Apple Silicon (M1 and later) | `llm-cost-dashboard-vX.Y.Z-aarch64-apple-darwin.tar.gz` |
+| macOS, Intel | `llm-cost-dashboard-vX.Y.Z-x86_64-apple-darwin.tar.gz` |
+| Linux (x86_64) | `llm-cost-dashboard-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz` |
+
+`SHA256SUMS.txt` in the release lists a checksum for every file.
+
+The binaries are not code-signed. On Windows, SmartScreen may say "Windows protected your PC" or "unknown publisher": click **More info**, then **Run anyway**. On macOS, if it says the developer cannot be verified, right-click the file in Finder and choose **Open** (or run `xattr -d com.apple.quarantine llm-dash`).
+
+### With Cargo
 
 ```bash
-# Latest code from this repository (crates.io has the older 1.0.2 release)
-cargo install --git https://github.com/Mattbusel/llm-cost-dashboard
-
-# or the published release
 cargo install llm-cost-dashboard
 ```
+
+### From source
+
+```bash
+git clone https://github.com/Mattbusel/llm-cost-dashboard
+cd llm-cost-dashboard
+cargo build --release     # binary at target/release/llm-dash
+```
+
+## Quick start
 
 The binary is called `llm-dash`.
 
@@ -28,12 +51,12 @@ llm-dash --budget 50 --log-file requests.ndjson
 Your log is one JSON object per line:
 
 ```json
-{"model":"claude-sonnet-4-6","input_tokens":512,"output_tokens":256,"latency_ms":340}
-{"model":"gpt-4o-mini","input_tokens":128,"output_tokens":64,"latency_ms":120,"provider":"openai"}
+{"model":"claude-sonnet-4-6","input_tokens":512,"output_tokens":256,"latency_ms":340,"timestamp":"2026-09-25T14:03:00Z"}
+{"model":"gpt-4o-mini","input_tokens":128,"output_tokens":64,"latency_ms":120,"provider":"openai","ts":1790344980}
 {"model":"gpt-4o","input_tokens":900,"output_tokens":0,"latency_ms":30000,"error":"timeout"}
 ```
 
-`model`, `input_tokens`, `output_tokens` and `latency_ms` are required; `provider` and `error` are optional. Malformed lines are skipped with a warning on stderr (`RUST_LOG=warn`). Model names are matched case-insensitively; unknown models are priced at a fallback of $5 / $15 per million tokens.
+`model`, `input_tokens`, `output_tokens` and `latency_ms` are required; `provider`, `error` and `timestamp` are optional. `timestamp` (also accepted as `ts`, `time` or `created_at`) can be an RFC 3339 string or Unix seconds or milliseconds; a line without one is dated when it is read. The dashboard keeps watching `--log-file`, so lines your app appends while it is open show up live. Malformed lines are skipped with a warning on stderr (`RUST_LOG=warn`). Model names are matched case-insensitively; unknown models are priced at a fallback of $5 / $15 per million tokens.
 
 ## The dashboard
 
@@ -60,14 +83,19 @@ llm-dash --demo --export-csv costs.csv        # or --export-json costs.json
 llm-dash --demo --export markdown             # csv | json | jsonl | markdown, to --out FILE or stdout
 ```
 
-`--forecast` (Holt-Winters projection) and `--diff <A> <B>` (Markdown diff between two date prefixes) also exist, but see [Status](#status-and-limitations): log lines carry no timestamp, so from the CLI they currently have no time spread to work with.
+```bash
+llm-dash --demo --forecast                    # Holt-Winters projection of the next hour, day, week and month
+llm-dash --log-file requests.ndjson --diff 2026-09-01 2026-09-02   # Markdown diff between two date prefixes
+```
+
+`--forecast` and `--diff` need timestamps in your log lines (see above). Without them every record is dated at load time, so `--forecast` says there is not enough time spread and `--diff` lists the dates it does have.
 
 ## CLI reference
 
 | Flag | Default | Description |
 |---|---|---|
 | `--budget <USD>` | `10.0` | Monthly budget limit |
-| `--log-file <PATH>` | | NDJSON request log to load at startup |
+| `--log-file <PATH>` | | NDJSON request log to load at startup and keep following |
 | `--demo` | off | Pre-load demo data |
 | `--serve <PORT>` | | Also start the HTTP API (below) |
 | `--webhook-url <URL>` | | Slack or generic webhook for budget alerts (repeatable) |
@@ -476,11 +504,11 @@ tests/, benches/     integration tests and criterion benchmarks
 
 ## Status and limitations
 
-- Log files are read once at startup; the dashboard does not follow a file as it grows and does not read stdin. Restart `llm-dash` to pick up new lines.
-- Log lines have no timestamp field, so every record is stamped with the time it was loaded. As a result `--forecast` on a log file or demo data has no time spread and prints `inf`, and `--diff` finds no records for past dates. The forecasting and diff APIs work when you supply real timestamps from Rust.
+- The dashboard follows `--log-file` as it grows (polling every half second) but does not read stdin. The one-shot reports (`--forecast`, `--diff`, exports) read the file once.
+- Time-based reports are only as good as the `timestamp` field in your log lines; lines without one are dated when read.
+- `--serve` exposes a snapshot of the data loaded at startup; lines tailed afterwards appear in the TUI but not in the HTTP API.
 - Prices are a static table; verify them against your provider's current pricing.
 - The crate is large (about 80 modules). The core path (ledger, pricing, TUI, export, comparison, HTTP API) is what the binary uses; many analysis modules are library-only.
-- The test suite currently has failures: `cargo test` reports 967 passed and 9 failed in the library tests, including the Welford anomaly detector (`anomaly::welford_tests`), so CI is red.
 
 ```bash
 cargo test

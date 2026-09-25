@@ -7,6 +7,36 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-25
+
+### Added
+
+- Prebuilt binaries for Windows, macOS (Apple Silicon and Intel) and Linux on
+  every GitHub Release, with `SHA256SUMS.txt`.
+- `--log-file` is now followed while the dashboard is open: appended lines are
+  ingested live, partial lines wait for their newline, and a truncated file is
+  re-read from the start (`tail` module, `ui::run_with_feed`).
+- Log lines may carry a `timestamp` (aliases `ts`, `time`, `created_at`): an
+  RFC 3339 string or Unix seconds/milliseconds. Records keep that time instead
+  of the load time.
+- Demo data is spread over the last 24 hours.
+
+### Fixed
+
+- `--forecast` printed `$inf` when records shared a timestamp; observations at
+  the same instant are now merged, and a clear error explains when there is not
+  enough time spread. Horizon totals integrate the forecast rate instead of
+  using the rate at the far end of the horizon. The "80%%" typo is gone.
+- `--diff` found nothing because records had no real dates; it now uses log
+  timestamps and says which dates exist when a period is empty.
+- Z-score anomaly detectors (`anomaly`, `anomaly_detector`, `cost_predictor`)
+  never flagged a spike after a perfectly flat history (standard deviation of
+  zero). They now score against a small floor (0.1% of the mean).
+- Log lines that are JSON arrays are rejected instead of being read positionally.
+- `ModelStats` percentiles use the nearest-rank method (p50 of 10..100 is 50).
+- Broken doctests in `aggregator`, `session` and `tagging`, a wrong expected
+  slope in a benchmark test, and clippy warnings. CI is green again.
+
 ### Added
 
 - Production-readiness pass: doc comments verified and completed on every public

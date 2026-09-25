@@ -227,6 +227,8 @@ impl App {
                 last.output_tokens,
                 last.latency_ms,
             );
+            // Keep the request time from the log line (or its read time).
+            rec.timestamp = last.timestamp;
             // Tag the record with the active session if one is set.
             if let Some(ref session) = self.current_session {
                 rec = rec.with_session(session.clone());
@@ -263,8 +265,14 @@ impl App {
             ("gemini-1.5-pro", "google", 1000, 500, 150),
         ];
         info!(count = demos.len(), "loading demo data");
-        for (model, provider, inp, out, lat) in demos {
-            self.record(CostRecord::new(*model, *provider, *inp, *out, *lat));
+        // Spread the demo requests over the last day (one every 72 minutes)
+        // so time-based views such as --forecast and --diff have a real span.
+        let now = Utc::now();
+        let n = demos.len() as i64;
+        for (i, (model, provider, inp, out, lat)) in demos.iter().enumerate() {
+            let mut rec = CostRecord::new(*model, *provider, *inp, *out, *lat);
+            rec.timestamp = now - chrono::Duration::minutes(72 * (n - 1 - i as i64));
+            self.record(rec);
         }
     }
 
@@ -301,7 +309,21 @@ impl App {
 ///
 /// Returns [`DashboardError::Terminal`] if raw-mode setup or any crossterm
 /// operation fails.
-pub fn run(mut app: App) -> Result<(), DashboardError> {
+pub fn run(app: App) -> Result<(), DashboardError> {
+    run_with_feed(app, None)
+}
+
+/// Like [`run`], but also ingests every line received on `feed` while the
+/// dashboard is open.  Pair it with [`crate::tail::follow`] to watch a log
+/// file that is still being written.
+///
+/// # Errors
+///
+/// Same as [`run`].
+pub fn run_with_feed(
+    mut app: App,
+    feed: Option<std::sync::mpsc::Receiver<String>>,
+) -> Result<(), DashboardError> {
     info!("initialising terminal (raw mode + alternate screen)");
     crossterm::terminal::enable_raw_mode().map_err(|e| DashboardError::Terminal(e.to_string()))?;
     let mut stdout = std::io::stdout();
@@ -312,7 +334,7 @@ pub fn run(mut app: App) -> Result<(), DashboardError> {
     let mut terminal =
         Terminal::new(backend).map_err(|e| DashboardError::Terminal(e.to_string()))?;
 
-    let result = event_loop(&mut terminal, &mut app);
+    let result = event_loop(&mut terminal, &mut app, feed.as_ref());
 
     // Always attempt cleanup even if the event loop errored.
     if let Err(e) = crossterm::terminal::disable_raw_mode() {
@@ -344,9 +366,18 @@ pub fn run(mut app: App) -> Result<(), DashboardError> {
 fn event_loop(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     app: &mut App,
+    feed: Option<&std::sync::mpsc::Receiver<String>>,
 ) -> Result<(), DashboardError> {
     info!("entering event loop");
     while app.running {
+        // Pull in any log lines appended since the last tick.
+        if let Some(rx) = feed {
+            while let Ok(line) = rx.try_recv() {
+                if let Err(e) = app.ingest_line(&line) {
+                    debug!(error = %e, "skipping malformed tailed log line");
+                }
+            }
+        }
         let records_snapshot: Vec<crate::cost::CostRecord> =
             app.ledger.records().to_vec();
 

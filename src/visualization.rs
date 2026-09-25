@@ -223,9 +223,8 @@ impl BarChart {
                 ((value / max_value) * bar_area as f64).round() as usize
             };
             let empty = bar_area.saturating_sub(filled);
-            let bar: String = std::iter::repeat(FULL_BLOCK)
-                .take(filled)
-                .chain(std::iter::repeat(LIGHT_SHADE).take(empty))
+            let bar: String = std::iter::repeat_n(FULL_BLOCK, filled)
+                .chain(std::iter::repeat_n(LIGHT_SHADE, empty))
                 .collect();
             lines.push(format!(
                 "{:>width$} | {} {:.2}",
@@ -423,7 +422,7 @@ impl TimeSeriesPlot {
     /// Draws a connecting line between two points on the grid using Bresenham's
     /// algorithm and `|`, `/`, `\` characters.
     fn draw_line(
-        grid: &mut Vec<Vec<char>>,
+        grid: &mut [Vec<char>],
         x0: usize,
         y0: usize,
         x1: usize,

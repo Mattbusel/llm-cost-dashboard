@@ -141,7 +141,7 @@ impl TrendAnalyzer {
             .iter()
             .enumerate()
             .map(|(i, _)| {
-                let start = if i + 1 >= window { i + 1 - window } else { 0 };
+                let start = (i + 1).saturating_sub(window);
                 let slice = &values[start..=i];
                 slice.iter().sum::<f64>() / slice.len() as f64
             })

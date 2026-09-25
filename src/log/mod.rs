@@ -97,13 +97,12 @@ impl LogEntry {
                     detected = Some("google".into());
                     break;
                 }
-                "x-request-id" => {
+                "x-request-id"
                     // OpenAI uses UUID-shaped request IDs; other providers may
                     // also send this header, so we only set it as a fallback.
-                    if looks_like_uuid(value) && detected.is_none() {
+                    if looks_like_uuid(value) && detected.is_none() => {
                         detected = Some("openai".into());
                     }
-                }
                 _ => {}
             }
         }
@@ -144,9 +143,14 @@ fn looks_like_uuid(s: &str) -> bool {
 /// Only the four required fields (`model`, `input_tokens`, `output_tokens`,
 /// `latency_ms`) are mandatory.  All other fields have sensible defaults.
 ///
+/// The optional `timestamp` field (aliases `ts`, `time`, `created_at`) accepts
+/// an RFC 3339 string, a `YYYY-MM-DD HH:MM:SS` string (UTC), or a Unix time
+/// number in seconds or milliseconds.  Lines without one are stamped with the
+/// time they were read.
+///
 /// Example JSON line:
 /// ```json
-/// {"model":"gpt-4o-mini","input_tokens":512,"output_tokens":256,"latency_ms":34}
+/// {"model":"gpt-4o-mini","input_tokens":512,"output_tokens":256,"latency_ms":34,"timestamp":"2026-09-25T14:03:00Z"}
 /// ```
 #[derive(Debug, Deserialize)]
 pub struct IncomingRecord {
@@ -164,14 +168,57 @@ pub struct IncomingRecord {
     /// Optional error description; presence implies `success = false`.
     #[serde(default)]
     pub error: Option<String>,
+    /// Optional request time.  See the type-level docs for accepted formats.
+    #[serde(default, alias = "ts", alias = "time", alias = "created_at")]
+    pub timestamp: Option<serde_json::Value>,
+}
+
+/// Parse a log-line timestamp value into UTC.
+///
+/// Accepts RFC 3339 strings, `YYYY-MM-DD HH:MM:SS` / `YYYY-MM-DDTHH:MM:SS`
+/// strings interpreted as UTC, bare `YYYY-MM-DD` dates, and Unix time numbers
+/// (seconds, or milliseconds when larger than 10^11).  Returns `None` for
+/// anything else.
+pub fn parse_timestamp(v: &serde_json::Value) -> Option<DateTime<Utc>> {
+    fn from_unix(n: f64) -> Option<DateTime<Utc>> {
+        if !n.is_finite() || n < 0.0 {
+            return None;
+        }
+        let ms = if n > 1e11 { n } else { n * 1000.0 };
+        DateTime::<Utc>::from_timestamp_millis(ms as i64)
+    }
+    match v {
+        serde_json::Value::Number(n) => n.as_f64().and_then(from_unix),
+        serde_json::Value::String(s) => {
+            let s = s.trim();
+            if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
+                return Some(dt.with_timezone(&Utc));
+            }
+            for fmt in ["%Y-%m-%d %H:%M:%S%.f", "%Y-%m-%dT%H:%M:%S%.f"] {
+                if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(s, fmt) {
+                    return Some(ndt.and_utc());
+                }
+            }
+            if let Ok(d) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+                return d.and_hms_opt(0, 0, 0).map(|ndt| ndt.and_utc());
+            }
+            s.parse::<f64>().ok().and_then(from_unix)
+        }
+        _ => None,
+    }
 }
 
 impl From<IncomingRecord> for LogEntry {
     fn from(r: IncomingRecord) -> Self {
         let success = r.error.is_none();
+        let timestamp = r
+            .timestamp
+            .as_ref()
+            .and_then(parse_timestamp)
+            .unwrap_or_else(Utc::now);
         Self {
             id: Uuid::new_v4(),
-            timestamp: Utc::now(),
+            timestamp,
             provider: r.provider.unwrap_or_else(|| "unknown".into()),
             model: r.model,
             input_tokens: r.input_tokens,
@@ -209,8 +256,24 @@ impl RequestLog {
     /// Returns [`DashboardError::LogParseError`] on malformed input so the
     /// caller can surface the error in the UI rather than panicking.
     pub fn ingest_line(&mut self, line: &str) -> Result<(), DashboardError> {
-        let record: IncomingRecord = serde_json::from_str(line.trim())
+        let value: serde_json::Value = serde_json::from_str(line.trim())
             .map_err(|e| DashboardError::LogParseError(e.to_string()))?;
+        // Only JSON objects are valid records; serde would otherwise accept a
+        // positional array such as `["gpt-4o", 100, 50, 20]`.
+        if !value.is_object() {
+            return Err(DashboardError::LogParseError(
+                "expected a JSON object per line".into(),
+            ));
+        }
+        let record: IncomingRecord = serde_json::from_value(value)
+            .map_err(|e| DashboardError::LogParseError(e.to_string()))?;
+        if let Some(ts) = &record.timestamp {
+            if !ts.is_null() && parse_timestamp(ts).is_none() {
+                return Err(DashboardError::LogParseError(format!(
+                    "unrecognised timestamp {ts}; use RFC 3339 or Unix seconds"
+                )));
+            }
+        }
         self.append(record.into());
         Ok(())
     }
@@ -310,6 +373,26 @@ mod tests {
         assert_eq!(log.len(), 1);
         assert_eq!(log.all()[0].model, "gpt-4o-mini");
         assert_eq!(log.all()[0].input_tokens, 512);
+    }
+
+    #[test]
+    fn test_ingest_uses_timestamp_field() {
+        let mut log = RequestLog::new();
+        log.ingest_line(r#"{"model":"m","input_tokens":1,"output_tokens":1,"latency_ms":1,"timestamp":"2024-01-08T10:00:00Z"}"#).unwrap();
+        log.ingest_line(r#"{"model":"m","input_tokens":1,"output_tokens":1,"latency_ms":1,"ts":1704067200}"#).unwrap();
+        log.ingest_line(r#"{"model":"m","input_tokens":1,"output_tokens":1,"latency_ms":1,"ts":1704067200000}"#).unwrap();
+        let all = log.all();
+        assert_eq!(all[0].timestamp.to_rfc3339(), "2024-01-08T10:00:00+00:00");
+        assert_eq!(all[1].timestamp.timestamp(), 1_704_067_200);
+        assert_eq!(all[2].timestamp.timestamp(), 1_704_067_200);
+    }
+
+    #[test]
+    fn test_ingest_bad_timestamp_is_error() {
+        let mut log = RequestLog::new();
+        let line = r#"{"model":"m","input_tokens":1,"output_tokens":1,"latency_ms":1,"timestamp":"yesterday"}"#;
+        assert!(log.ingest_line(line).is_err());
+        assert!(log.is_empty());
     }
 
     #[test]

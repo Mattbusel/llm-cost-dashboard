@@ -44,9 +44,9 @@ impl BucketGranularity {
     /// ```
     /// use llm_cost_dashboard::aggregator::BucketGranularity;
     ///
-    /// // 1700000065 is 65 seconds past a minute boundary.
+    /// // 1700000065 is 25 seconds past a minute boundary (1700000040).
     /// let ts = 1_700_000_065u64;
-    /// assert_eq!(BucketGranularity::Minute.bucket_start(ts), ts - 65);
+    /// assert_eq!(BucketGranularity::Minute.bucket_start(ts), ts - 25);
     /// ```
     pub fn bucket_start(self, ts: u64) -> u64 {
         match self {
@@ -207,8 +207,8 @@ impl CostAggregator {
                 b.granularity == granularity
                     && b.period_start >= from_ts
                     && b.period_start <= to_ts
-                    && model.map_or(true, |m| b.model == m)
-                    && tenant.map_or(true, |t| b.tenant == t)
+                    && model.is_none_or(|m| b.model == m)
+                    && tenant.is_none_or(|t| b.tenant == t)
             })
             .cloned()
             .collect();

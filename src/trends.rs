@@ -130,7 +130,7 @@ impl TrendAnalyzer {
             .keys()
             .next_back()
             .cloned()
-            .unwrap_or_else(|| Self::today_string());
+            .unwrap_or_else(Self::today_string);
 
         // current period: [last_date - (days-1), last_date]
         let period_end = last_date.clone();
@@ -247,7 +247,7 @@ impl TrendAnalyzer {
             .keys()
             .next_back()
             .cloned()
-            .unwrap_or_else(|| Self::today_string());
+            .unwrap_or_else(Self::today_string);
 
         let mut values: Vec<f64> = Vec::with_capacity(days);
         for i in (0..days as u32).rev() {

@@ -163,7 +163,7 @@ impl ExplorerState {
 
         match self.sort {
             SortColumn::Timestamp => {
-                filtered.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+                filtered.sort_by_key(|r| std::cmp::Reverse(r.timestamp));
             }
             SortColumn::CostDesc => {
                 filtered.sort_by(|a, b| {

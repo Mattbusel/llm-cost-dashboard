@@ -97,7 +97,7 @@ impl SpendingPace {
     /// Fraction of elapsed time in this period (0.0–1.0).
     fn time_fraction_elapsed(&self, period_secs: f64) -> f64 {
         let elapsed = self.period_start.elapsed().as_secs_f64();
-        (elapsed / period_secs).min(1.0).max(f64::EPSILON)
+        (elapsed / period_secs).clamp(f64::EPSILON, 1.0)
     }
 
     /// `(current_spend / period_budget) / time_fraction_elapsed`.
