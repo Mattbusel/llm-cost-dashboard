@@ -83,6 +83,7 @@ pub struct SlaAlert {
 
 /// Budget configuration for one SLA tier.
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct TierBudget {
     /// Daily budget in USD. `None` = unlimited.
     pub daily_usd: Option<f64>,
@@ -90,11 +91,6 @@ pub struct TierBudget {
     pub monthly_usd: Option<f64>,
 }
 
-impl Default for TierBudget {
-    fn default() -> Self {
-        Self { daily_usd: None, monthly_usd: None }
-    }
-}
 
 /// Full SLA configuration.
 #[derive(Debug, Clone)]

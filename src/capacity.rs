@@ -212,7 +212,7 @@ impl CapacityPlanner {
             .max()
             .unwrap_or(0);
 
-        let beta = (alpha * 0.3).min(0.9).max(0.01);
+        let beta = (alpha * 0.3).clamp(0.01, 0.9);
         let alpha = alpha.clamp(0.01, 0.99);
 
         // Smooth tokens and cost independently.

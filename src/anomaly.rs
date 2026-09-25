@@ -360,6 +360,15 @@ pub struct AnomalyReport {
     pub max_z_score: f64,
 }
 
+/// Standard deviation used for z-scoring, floored so that a perfectly flat
+/// history (spread of zero) still lets a real spike or dip register.
+///
+/// The floor is 0.1% of the mean's magnitude, and never below 1e-9 USD, so
+/// tiny floating-point wobble on a flat series is not flagged.
+pub(crate) fn effective_stddev(stddev: f64, mean: f64) -> f64 {
+    stddev.max(mean.abs() * 1e-3).max(1e-9)
+}
+
 /// Z-score anomaly detector using Welford's online algorithm.
 ///
 /// Maintains only the count, mean, and M2 aggregates — no stored history —
@@ -435,8 +444,11 @@ impl AnomalyDetector {
 
         // Classify.
         let enough = pre_count >= self.config.min_samples.max(2);
-        let (z_score, is_anomaly) = if enough && pre_stddev > f64::EPSILON {
-            let z = (cost - pre_mean) / pre_stddev;
+        // A perfectly flat history has zero spread, which used to make every
+        // spike invisible. Score against a small floor instead.
+        let scale = effective_stddev(pre_stddev, pre_mean);
+        let (z_score, is_anomaly) = if enough {
+            let z = (cost - pre_mean) / scale;
             (z, z.abs() > self.config.z_threshold)
         } else {
             (0.0, false)
@@ -446,7 +458,7 @@ impl AnomalyDetector {
             is_anomaly,
             z_score,
             mean_usd: pre_mean,
-            stddev_usd: pre_stddev,
+            stddev_usd: if enough { scale } else { pre_stddev },
             current_usd: cost,
         }
     }

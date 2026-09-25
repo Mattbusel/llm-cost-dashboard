@@ -87,8 +87,10 @@ impl ModelStats {
         latencies.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
         let percentile = |p: f64| -> f64 {
-            let idx = ((p / 100.0) * (n as f64 - 1.0)).round() as usize;
-            latencies[idx.min(n - 1)]
+            // Nearest-rank percentile: the smallest value with at least p% of
+            // samples at or below it.
+            let rank = ((p / 100.0) * n as f64).ceil() as usize;
+            latencies[rank.saturating_sub(1).min(n - 1)]
         };
 
         let p50 = percentile(50.0);

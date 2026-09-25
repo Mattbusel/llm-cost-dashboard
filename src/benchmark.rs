@@ -142,7 +142,7 @@ impl BenchmarkTracker {
             }
         }
         // Sort for deterministic output.
-        result.sort_by(|(sa, _, _), (sb, _, _)| sa.name().cmp(&sb.name()));
+        result.sort_by_key(|(sa, _, _)| sa.name());
         result
     }
 
@@ -279,8 +279,8 @@ mod tests {
         tracker.add_score(make_score("model-a", BenchmarkSuite::HumanEval, 80.0, 300));
 
         let trend = tracker.score_trend("model-a", &BenchmarkSuite::HumanEval).unwrap();
-        // OLS slope should be 0.2 (10 point increase per 50 time units).
-        assert!((trend - 0.2).abs() < 0.001, "expected slope ~0.2, got {trend}");
+        // OLS slope should be 0.1 (10 point increase per 100 time units).
+        assert!((trend - 0.1).abs() < 0.001, "expected slope ~0.1, got {trend}");
         assert!(trend > 0.0, "improving model should have positive trend");
     }
 

@@ -56,6 +56,7 @@ pub mod recommendations;
 pub mod scheduler;
 pub mod session;
 pub mod tagging;
+pub mod tail;
 pub mod tags;
 pub mod trace;
 pub mod trends;

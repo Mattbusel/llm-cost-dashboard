@@ -332,6 +332,7 @@ pub enum Environment {
 
 impl Environment {
     /// Parse a string into an [`Environment`] (case-insensitive).
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         match s.to_ascii_lowercase().as_str() {
             "dev" | "development" => Self::Dev,

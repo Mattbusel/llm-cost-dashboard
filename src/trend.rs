@@ -164,7 +164,7 @@ impl TrendAnalyzer {
         } else {
             1.0 - ss_res / ss_tot
         };
-        let r_squared = r_squared.max(0.0).min(1.0);
+        let r_squared = r_squared.clamp(0.0, 1.0);
 
         let flat_threshold = 0.001;
         let trend_direction = if slope > flat_threshold {

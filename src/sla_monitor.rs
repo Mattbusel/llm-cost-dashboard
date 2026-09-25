@@ -254,7 +254,7 @@ impl SlaMonitor {
     }
 
     /// Compute the `p`-th percentile of `values` (sorted in place).
-    pub fn percentile(values: &mut Vec<f64>, p: f64) -> f64 {
+    pub fn percentile(values: &mut [f64], p: f64) -> f64 {
         if values.is_empty() {
             return 0.0;
         }

@@ -178,10 +178,7 @@ impl CostPredictor {
         let n = recent.len() as f64;
         let mean = recent.iter().map(|d| d.cost_usd).sum::<f64>() / n;
         let variance = recent.iter().map(|d| (d.cost_usd - mean).powi(2)).sum::<f64>() / n;
-        let std = variance.sqrt();
-        if std < f64::EPSILON {
-            return 0.0;
-        }
+        let std = crate::anomaly::effective_stddev(variance.sqrt(), mean);
         (dp.cost_usd - mean) / std
     }
 

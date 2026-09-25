@@ -25,7 +25,12 @@ struct Cli {
     #[arg(long, default_value = "10.0")]
     budget: f64,
 
-    /// JSON log file to tail for live data (newline-delimited JSON)
+    /// JSON log file to load and then tail for live data (newline-delimited JSON).
+    ///
+    /// Each line needs model, input_tokens, output_tokens and latency_ms, and
+    /// may carry a "timestamp" (RFC 3339 or Unix seconds). Lines without one
+    /// are dated when they are read. In the dashboard, lines appended to the
+    /// file after start-up show up live.
     #[arg(long)]
     log_file: Option<PathBuf>,
 
@@ -148,7 +153,8 @@ struct Cli {
     ///
     /// The comparison is performed over the loaded log file or demo data.
     /// Records whose date string starts with the given prefix are bucketed
-    /// into that period.
+    /// into that period, so `2024-01` selects a whole month.  Dates come from
+    /// each log line's "timestamp" field.
     ///
     /// Example: `llm-dash --demo --diff 2024-01-01 2024-01-08`
     #[arg(long, value_name = "PERIOD", num_args = 2)]
@@ -205,16 +211,15 @@ fn main() {
         app.load_demo_data();
     }
 
+    let mut tail_offset = 0u64;
     if let Some(path) = &cli.log_file {
         info!(path = %path.display(), "loading log file");
-        match std::fs::read_to_string(path) {
-            Ok(content) => {
+        match llm_cost_dashboard::tail::read_complete_lines(path) {
+            Ok((lines, offset)) => {
+                tail_offset = offset;
                 let mut ok = 0usize;
                 let mut bad = 0usize;
-                for line in content.lines() {
-                    if line.trim().is_empty() {
-                        continue;
-                    }
+                for line in &lines {
                     match app.ingest_line(line) {
                         Ok(()) => ok += 1,
                         Err(e) => {
@@ -355,8 +360,8 @@ fn main() {
             profile.avg_output_tokens,
         );
         println!(
-            "  {:<45}  {:>12}  {:>10}  {:>15}  {}",
-            "Model", "Monthly USD", "Daily USD", "Per-1k-req USD", "Provider"
+            "  {:<45}  {:>12}  {:>10}  {:>15}  Provider",
+            "Model", "Monthly USD", "Daily USD", "Per-1k-req USD"
         );
         println!("  {}", "-".repeat(100));
         for proj in cmp.ranked() {
@@ -384,7 +389,7 @@ fn main() {
     if cli.forecast {
         use llm_cost_dashboard::forecast::CostForecaster;
 
-        let records = app.ledger.records();
+        let mut records: Vec<_> = app.ledger.records().to_vec();
         if records.len() < 3 {
             eprintln!(
                 "Error: --forecast requires at least 3 cost records (have {}). \
@@ -393,12 +398,13 @@ fn main() {
             );
             std::process::exit(1);
         }
+        records.sort_by_key(|r| r.timestamp);
 
         let mut forecaster = CostForecaster::new();
         let mut cumulative = 0.0_f64;
-        for record in records {
+        for record in &records {
             cumulative += record.total_cost_usd;
-            let ts = record.timestamp.timestamp() as f64;
+            let ts = record.timestamp.timestamp_millis() as f64 / 1000.0;
             forecaster.record(ts, cumulative);
         }
 
@@ -410,24 +416,28 @@ fn main() {
                 println!("  Next week:  ${:.2}", hw.next_week_usd);
                 println!("  Next month: ${:.2}", hw.next_month_usd);
                 println!(
-                    "\n  80%% CI (next hour): [${:.6}, ${:.6}]",
+                    "\n  80% CI (next hour): [${:.6}, ${:.6}]",
                     hw.confidence_interval.0,
                     hw.confidence_interval.1
                 );
                 if hw.budget_warning {
                     eprintln!(
-                        "\n  WARNING: forecasted monthly spend (${:.2}) exceeds 80%% of \
+                        "\n  WARNING: forecasted monthly spend (${:.2}) exceeds 80% of \
                          budget (${:.2})!",
                         hw.next_month_usd,
                         cli.budget
                     );
                 } else {
-                    println!("  Budget status: OK (monthly forecast ${:.2} < 80%% of ${:.2} budget)",
+                    println!("  Budget status: OK (monthly forecast ${:.2} < 80% of ${:.2} budget)",
                         hw.next_month_usd, cli.budget);
                 }
             }
             None => {
-                eprintln!("Error: insufficient data for Holt-Winters forecast (need >= 3 observations).");
+                eprintln!(
+                    "Error: a forecast needs at least 3 distinct request times, but these \
+                     records do not span enough time. Add a \"timestamp\" field (RFC 3339 or \
+                     Unix seconds) to each log line; lines without one are all dated at load time."
+                );
                 std::process::exit(1);
             }
         }
@@ -495,7 +505,7 @@ fn main() {
         // Build snapshots by partitioning records whose date prefix matches.
         let records = app.ledger.records();
 
-        let mut build_snapshot = |label: &str| -> PeriodSnapshot {
+        let build_snapshot = |label: &str| -> PeriodSnapshot {
             let mut total = 0.0_f64;
             let mut by_model: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
             let mut request_count = 0u64;
@@ -517,6 +527,23 @@ fn main() {
 
         let baseline = build_snapshot(&period1);
         let current = build_snapshot(&period2);
+
+        for snap in [&baseline, &current] {
+            if snap.request_count == 0 {
+                let mut dates: Vec<String> = records
+                    .iter()
+                    .map(|r| r.timestamp.format("%Y-%m-%d").to_string())
+                    .collect();
+                dates.sort();
+                dates.dedup();
+                eprintln!(
+                    "Note: no records fall in period {:?}. Dates present in the data: {}. \
+                     Log lines without a \"timestamp\" field are dated when they are read.",
+                    snap.period,
+                    if dates.is_empty() { "none".to_string() } else { dates.join(", ") }
+                );
+            }
+        }
 
         let report = CostDiff::compare(&baseline, &current);
         println!("{}", report.render_markdown());
@@ -632,14 +659,14 @@ fn main() {
         });
 
         info!("starting TUI event loop (--serve mode)");
-        if let Err(e) = ui::run(app) {
+        if let Err(e) = ui::run_with_feed(app, tail_feed(&cli.log_file, tail_offset)) {
             error!(error = %e, "dashboard terminated with error");
             eprintln!("Dashboard error: {e}");
             std::process::exit(1);
         }
     } else {
         info!("starting TUI event loop");
-        if let Err(e) = ui::run(app) {
+        if let Err(e) = ui::run_with_feed(app, tail_feed(&cli.log_file, tail_offset)) {
             error!(error = %e, "dashboard terminated with error");
             eprintln!("Dashboard error: {e}");
             std::process::exit(1);
@@ -647,4 +674,15 @@ fn main() {
     }
 
     info!("llm-dash exited cleanly");
+}
+
+/// Start following the log file (if any) from where the initial load stopped.
+fn tail_feed(
+    log_file: &Option<PathBuf>,
+    offset: u64,
+) -> Option<std::sync::mpsc::Receiver<String>> {
+    log_file.as_ref().map(|path| {
+        info!(path = %path.display(), offset, "tailing log file for new lines");
+        llm_cost_dashboard::tail::follow(path.clone(), offset, std::time::Duration::from_millis(500))
+    })
 }

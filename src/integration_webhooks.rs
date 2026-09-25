@@ -133,7 +133,7 @@ impl WebhookPayload {
         let blocks = if secret_bytes.is_empty() {
             1
         } else {
-            (secret_bytes.len() + block_size - 1) / block_size
+            secret_bytes.len().div_ceil(block_size)
         };
 
         for block_idx in 0..blocks {
