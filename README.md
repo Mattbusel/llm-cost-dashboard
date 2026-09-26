@@ -13,8 +13,6 @@
 <p align="center">
   <img src="https://raw.githubusercontent.com/Mattbusel/llm-cost-dashboard/master/assets/dashboard.gif" alt="llm-dash tailing a request log: new requests stream in, a 60,000-token gpt-4o call is flagged as a 26.7x cost anomaly, then the cost explorer sorts by price and opens that call" width="100%">
 </p>
-<p align="center"><sub>A real <code>llm-dash</code> run recorded today. The log starts with a week of sample requests and a script appends new ones while the dashboard tails the file; one 60,000-token prompt gets flagged.</sub></p>
-
 ## Install
 
 | Your system | Command |
@@ -22,7 +20,7 @@
 | **Windows** (PowerShell) | `irm https://raw.githubusercontent.com/Mattbusel/llm-cost-dashboard/master/install.ps1 \| iex` |
 | **Windows** (Scoop) | `scoop bucket add mattbusel https://github.com/Mattbusel/scoop-bucket` then `scoop install llm-dash` |
 | **macOS / Linux** (Homebrew) | `brew install mattbusel/tap/llm-dash` |
-| **macOS / Linux** (script) | `curl -fsSL https://raw.githubusercontent.com/Mattbusel/llm-cost-dashboard/master/install.sh \| sh` |
+| **macOS / Linux, incl. ARM** (script) | `curl -fsSL https://raw.githubusercontent.com/Mattbusel/llm-cost-dashboard/master/install.sh \| sh` |
 | **Rust users** (prebuilt) | `cargo binstall llm-cost-dashboard` |
 | **Rust users** (from source) | `cargo install llm-cost-dashboard` |
 | **Anything else** | Download a zip or tarball from [Releases](https://github.com/Mattbusel/llm-cost-dashboard/releases/latest) |
