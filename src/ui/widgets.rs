@@ -17,13 +17,16 @@ use crate::ui::theme::Theme;
 /// Render the budget gauge panel.
 pub fn render_budget(frame: &mut Frame, area: Rect, budget: &BudgetEnvelope) {
     let pct = budget.pct_consumed();
-    let style = Theme::budget_style(pct);
+    let mut style = Theme::budget_style(pct);
+    if crate::ui::theme::no_color() {
+        style = style.add_modifier(ratatui::style::Modifier::REVERSED);
+    }
     let label = format!(
-        "${:.4} / ${:.2} ({}) — ${:.4} remaining",
+        "${:.2} of ${:.2}  {:.0}%  {}",
         budget.spent_usd,
         budget.limit_usd,
+        pct * 100.0,
         budget.status(),
-        budget.remaining(),
     );
     let gauge = Gauge::default()
         .block(

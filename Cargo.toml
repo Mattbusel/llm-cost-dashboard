@@ -1,18 +1,26 @@
 [package]
 name = "llm-cost-dashboard"
-version = "1.2.0"
+version = "1.2.1"
 edition = "2021"
 rust-version = "1.82"
-description = "Real-time terminal dashboard for LLM token spend - cost/request, projected monthly bills, per-model breakdown"
-keywords = ["llm", "cost", "dashboard", "tui", "ratatui"]
-categories = ["command-line-utilities", "visualization"]
+description = "See what your LLM API calls cost: a live terminal dashboard (llm-dash) for spend, budget, per-model costs and forecasts, pricing 83 models"
+keywords = ["llm", "cost", "tui", "openai", "anthropic"]
+categories = ["command-line-utilities", "visualization", "development-tools"]
 license = "MIT"
 repository = "https://github.com/Mattbusel/llm-cost-dashboard"
 homepage = "https://github.com/Mattbusel/llm-cost-dashboard"
 documentation = "https://docs.rs/llm-cost-dashboard"
 readme = "README.md"
-authors = ["Matt Busel <matt@example.com>"]
-exclude = ["tests/fixtures/**", ".github/**"]
+authors = ["Matt Busel"]
+exclude = ["tests/fixtures/**", ".github/**", "assets/**", "packaging/**", "install.sh", "install.ps1"]
+
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/llm-cost-dashboard-v{ version }-{ target }{ archive-suffix }"
+bin-dir = "llm-cost-dashboard-v{ version }-{ target }/{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-fmt = "zip"
 
 [features]
 default = ["webhooks"]

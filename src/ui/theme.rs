@@ -1,4 +1,21 @@
 use ratatui::style::{Color, Modifier, Style};
+use std::sync::OnceLock;
+
+/// `true` when the `NO_COLOR` environment variable is set to a non-empty
+/// value (see <https://no-color.org>). Checked once per process.
+pub fn no_color() -> bool {
+    static NO_COLOR: OnceLock<bool> = OnceLock::new();
+    *NO_COLOR.get_or_init(|| std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty()))
+}
+
+/// Foreground style, or a plain style when colour is disabled.
+fn fg(color: Color) -> Style {
+    if no_color() {
+        Style::default()
+    } else {
+        Style::default().fg(color)
+    }
+}
 
 /// Centralised colour and style palette for the dashboard.
 ///
@@ -9,51 +26,54 @@ pub struct Theme;
 impl Theme {
     /// Bold cyan style used for the top title bar.
     pub fn title() -> Style {
-        Style::default()
-            .fg(Color::Cyan)
+        fg(Color::Cyan)
             .add_modifier(Modifier::BOLD)
     }
 
     /// Bold yellow style used for table column headers.
     pub fn header() -> Style {
-        Style::default()
-            .fg(Color::Yellow)
+        fg(Color::Yellow)
             .add_modifier(Modifier::BOLD)
     }
 
     /// Green style indicating a healthy / within-budget state.
     pub fn ok() -> Style {
-        Style::default().fg(Color::Green)
+        fg(Color::Green)
     }
 
     /// Yellow style indicating a warning state (e.g. alert threshold crossed).
     pub fn warn() -> Style {
-        Style::default().fg(Color::Yellow)
+        fg(Color::Yellow)
     }
 
     /// Red style indicating an error or over-budget state.
     pub fn danger() -> Style {
-        Style::default().fg(Color::Red)
+        fg(Color::Red)
     }
 
-    /// Standard white foreground for ordinary body text.
+    /// Default terminal foreground for ordinary body text (readable on both
+    /// dark and light terminal themes).
     pub fn normal() -> Style {
-        Style::default().fg(Color::White)
+        fg(Color::Reset)
     }
 
     /// Dark-grey style used for labels and secondary information.
     pub fn dim() -> Style {
-        Style::default().fg(Color::DarkGray)
+        fg(Color::DarkGray)
     }
 
     /// Cyan-on-black style used to highlight a selected table row.
     pub fn highlight() -> Style {
-        Style::default().fg(Color::Black).bg(Color::Cyan)
+        if no_color() {
+            Style::default().add_modifier(Modifier::REVERSED)
+        } else {
+            Style::default().fg(Color::Black).bg(Color::Cyan)
+        }
     }
 
     /// Dark-grey style for widget borders.
     pub fn border() -> Style {
-        Style::default().fg(Color::DarkGray)
+        fg(Color::DarkGray)
     }
 
     /// Choose `ok`, `warn`, or `danger` based on the fraction of budget consumed.
