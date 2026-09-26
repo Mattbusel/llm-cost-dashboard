@@ -2,18 +2,18 @@
   <img src="https://raw.githubusercontent.com/Mattbusel/llm-cost-dashboard/master/assets/banner.png" alt="llm-dash: see what every LLM call costs, live in your terminal" width="100%">
 </p>
 
-# llm-dash
-
-**See what your AI model calls cost, live in your terminal, before the bill arrives.**
+<h3 align="center">See what your AI model calls cost, live in your terminal, before the bill arrives.</h3>
 
 [![crates.io](https://img.shields.io/crates/v/llm-cost-dashboard.svg)](https://crates.io/crates/llm-cost-dashboard)
 [![docs.rs](https://docs.rs/llm-cost-dashboard/badge.svg)](https://docs.rs/llm-cost-dashboard)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+<p align="center"><a href="https://mattbusel.github.io/llm-cost-dashboard/"><b>Website</b></a> · <a href="#install">Install</a> · <a href="#use-it-in-3-steps">Use it in 3 steps</a> · <a href="https://docs.rs/llm-cost-dashboard">Library docs</a></p>
+
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Mattbusel/llm-cost-dashboard/master/assets/dashboard.gif" alt="llm-dash tailing a request log: the budget gauge fills, a 60,000-token gpt-4o call is flagged as a 28.7x cost anomaly, then the cost explorer sorts by price" width="100%">
+  <img src="https://raw.githubusercontent.com/Mattbusel/llm-cost-dashboard/master/assets/dashboard.gif" alt="llm-dash tailing a request log: new requests stream in, a 60,000-token gpt-4o call is flagged as a 26.7x cost anomaly, then the cost explorer sorts by price and opens that call" width="100%">
 </p>
-<p align="center"><sub>A real <code>llm-dash</code> run recorded today. A script appends sample requests to <code>requests.ndjson</code> while the dashboard tails the file; one 60,000-token prompt gets flagged.</sub></p>
+<p align="center"><sub>A real <code>llm-dash</code> run recorded today. The log starts with a week of sample requests and a script appends new ones while the dashboard tails the file; one 60,000-token prompt gets flagged.</sub></p>
 
 ## Install
 
@@ -68,7 +68,7 @@ New lines show up as your app writes them. The budget gauge turns yellow at 80% 
 
 ## Results
 
-What the one-shot reports print (real output from `llm-dash 1.2.1` on today's demo data):
+What the one-shot reports print (real output from `llm-dash 1.2.2` on today's demo data):
 
 ```text
 $ llm-dash --demo --compare
@@ -98,7 +98,7 @@ Holt-Winters Cost Forecast (based on 20 records)
   WARNING: forecasted monthly spend ($44.33) exceeds 80% of budget ($50.00)!
 ```
 
-In the recording above, 34 requests cost $0.4996 in total, and one gpt-4o call with 60,000 input tokens cost $0.3375 on its own: 28.7 times the running average for that model, which is what the anomaly panel reports.
+In the recording above, the log's 70 requests cost $0.5845 in total, and one gpt-4o call with 60,000 input tokens cost $0.3375 on its own: 26.7 times that model's running average, which is what the anomaly panel reports.
 
 ## Your log format
 
@@ -113,7 +113,22 @@ In the recording above, 34 requests cost $0.4996 in total, and one gpt-4o call w
 
 ## The dashboard
 
-Panels: **Summary** (total and projected monthly spend), **Budget** gauge, **Forecast**, **Cache Breakdown**, **Savings Opportunities** (cheaper models for your traffic), **Cost by Model** bars, **Recent Requests** table, **Cost Anomalies**, a 7-day trend and a sparkline of the last 60 request costs. The screen refreshes every 250 ms. Before any data arrives, the requests panel shows how to feed it. Colors follow your terminal theme and are turned off when `NO_COLOR` is set.
+Panels, left to right and top to bottom:
+
+| Panel | What it tells you |
+|---|---|
+| **Summary** | What you have spent, and what a month costs at the last hour's pace |
+| **Budget** | Spend against `--budget`; yellow at 80%, red past 100% |
+| **Forecast** | Per-day and month-end spend from the trend across all your data. Until the log spans enough time, it uses the last hour's pace and says so |
+| **Prompt Cache** | Cached-token reads and writes (one line when your log has none) |
+| **Savings Opportunities** | Cheaper models for your traffic, with the monthly saving |
+| **Cost by Model** | One bar per model, with its total |
+| **Recent Requests** | The latest calls, newest first |
+| **Cost Anomalies** | Calls that cost 2x or more their model's running average |
+| **Last 7 days** | Spend per day, today highlighted |
+| **Spend over time** | The last 60 request costs |
+
+The screen refreshes every 250 ms. Before any data arrives, the requests panel shows how to feed it. Colors follow your terminal theme and are turned off when `NO_COLOR` is set.
 
 | Key | Action |
 |---|---|

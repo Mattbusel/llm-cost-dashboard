@@ -7,6 +7,24 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-09-26
+
+### Changed
+
+- Summary says what its monthly figure means ("At last hour's pace"), and the
+  Forecast panel labels its trend-based numbers, so the two projections no
+  longer look like conflicting answers.
+- Forecast falls back to the last hour's pace, and says so, until the log
+  spans enough time for a trend (it used to show only "--").
+- The 7-day trend is now seven labelled bars (day and dollar amount) across
+  the full width, with today highlighted.
+- Empty panels shrink to one line: Prompt Cache (was Cache Breakdown) when
+  the log has no cached tokens, Cost Anomalies when there are none.
+- Release binaries for Linux ARM64 (`aarch64-unknown-linux-gnu`);
+  `install.sh`, Homebrew and cargo-binstall pick them up.
+- GitHub Actions moved off the deprecated Node 20 versions.
+- README: the demo GIF opens on the full dashboard and runs about 14 seconds.
+
 ## [1.2.1] - 2026-09-25
 
 ### Fixed

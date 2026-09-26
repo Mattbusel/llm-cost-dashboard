@@ -32,7 +32,7 @@ esac
 case "$arch" in
   x86_64 | amd64) arch_t="x86_64" ;;
   arm64 | aarch64)
-    [ "$os" = "Darwin" ] || die "no prebuilt binary for $os $arch yet. Use: cargo install llm-cost-dashboard"
+    [ "$os_t" = "pc-windows-msvc" ] && die "no prebuilt binary for Windows on ARM yet. Use: cargo install llm-cost-dashboard"
     arch_t="aarch64" ;;
   *) die "no prebuilt binary for $arch. Use: cargo install llm-cost-dashboard" ;;
 esac
