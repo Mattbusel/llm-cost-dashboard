@@ -59,15 +59,15 @@ pub fn render_sparkline(frame: &mut Frame, area: Rect, data: &[u64]) {
 pub fn render_summary(frame: &mut Frame, area: Rect, total: f64, monthly: f64, count: usize) {
     let lines = vec![
         Line::from(vec![
-            Span::styled("Total spend:  ", Theme::dim()),
-            Span::styled(format!("${total:.6}"), Theme::ok()),
+            Span::styled("Spent so far:   ", Theme::dim()),
+            Span::styled(format!("${total:.4}"), Theme::ok()),
         ]),
         Line::from(vec![
-            Span::styled("Projected/mo: ", Theme::dim()),
-            Span::styled(format!("${monthly:.4}"), Theme::warn()),
+            Span::styled("Month, 1h pace: ", Theme::dim()),
+            Span::styled(format!("${monthly:.2}/mo"), Theme::warn()),
         ]),
         Line::from(vec![
-            Span::styled("Requests:     ", Theme::dim()),
+            Span::styled("Requests:       ", Theme::dim()),
             Span::styled(format!("{count}"), Theme::normal()),
         ]),
     ];

@@ -1,6 +1,6 @@
 [package]
 name = "llm-cost-dashboard"
-version = "1.2.1"
+version = "1.2.2"
 edition = "2021"
 rust-version = "1.82"
 description = "See what your LLM API calls cost: a live terminal dashboard (llm-dash) for spend, budget, per-model costs and forecasts, pricing 83 models"
@@ -8,11 +8,11 @@ keywords = ["llm", "cost", "tui", "openai", "anthropic"]
 categories = ["command-line-utilities", "visualization", "development-tools"]
 license = "MIT"
 repository = "https://github.com/Mattbusel/llm-cost-dashboard"
-homepage = "https://github.com/Mattbusel/llm-cost-dashboard"
+homepage = "https://mattbusel.github.io/llm-cost-dashboard/"
 documentation = "https://docs.rs/llm-cost-dashboard"
 readme = "README.md"
 authors = ["Matt Busel"]
-exclude = ["tests/fixtures/**", ".github/**", "assets/**", "packaging/**", "install.sh", "install.ps1"]
+exclude = ["tests/fixtures/**", ".github/**", "assets/**", "packaging/**", "docs/**", "install.sh", "install.ps1"]
 
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/v{ version }/llm-cost-dashboard-v{ version }-{ target }{ archive-suffix }"

@@ -8,7 +8,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::Modifier,
     text::{Line, Span},
-    widgets::{BarChart, Block, Borders, Cell, Paragraph, Row, Sparkline, Table},
+    widgets::{BarChart, Block, Borders, Cell, Paragraph, Row, Table},
     Frame,
 };
 
@@ -37,16 +37,36 @@ pub fn render(
 ) {
     let area = frame.area();
 
+    // Panels with nothing to show shrink to a single line so the requests
+    // table gets the room.
+    let anomaly_h = if anomalies.is_empty() {
+        3
+    } else {
+        2 + anomalies.len().min(4) as u16
+    };
+    let has_cache = ledger
+        .records()
+        .iter()
+        .any(|r| r.cache.cache_read_tokens > 0 || r.cache.cache_write_tokens > 0);
+
+    // On short terminals the history panels give way to the core panels.
+    let (trend_h, spark_h) = match area.height {
+        36.. => (6, 3),
+        32..=35 => (6, 0),
+        28..=31 => (4, 0),
+        _ => (0, 0),
+    };
+
     // Outer layout: title bar + main + anomalies + trend + sparkline + help bar
     let outer = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // title bar
-            Constraint::Min(10),   // main content
-            Constraint::Length(5), // anomaly panel (shown when anomalies exist)
-            Constraint::Length(5), // 7-day trend panel
-            Constraint::Length(3), // per-request sparkline
-            Constraint::Length(1), // help bar
+            Constraint::Length(1),         // title bar
+            Constraint::Min(10),           // main content
+            Constraint::Length(anomaly_h), // cost anomalies
+            Constraint::Length(trend_h),   // 7-day trend
+            Constraint::Length(spark_h),   // per-request sparkline
+            Constraint::Length(1),         // help bar
         ])
         .split(area);
 
@@ -65,7 +85,7 @@ pub fn render(
             Constraint::Length(5), // summary: 3 lines
             Constraint::Length(3), // budget gauge
             Constraint::Length(5), // forecast: 3 lines
-            Constraint::Length(6), // cache: 4 lines
+            Constraint::Length(if has_cache { 6 } else { 3 }), // cache
             Constraint::Min(3),    // savings: whatever is left
         ])
         .split(main[0]);
@@ -75,7 +95,7 @@ pub fn render(
     widgets::render_summary(frame, left[0], total, monthly, ledger.len());
     widgets::render_budget(frame, left[1], budget);
     render_forecast(frame, left[2], ledger);
-    render_cache_breakdown(frame, left[3], ledger);
+    render_cache_breakdown(frame, left[3], ledger, has_cache);
     render_savings_opportunities(frame, left[4], ledger);
 
     // Right col: model bar chart (top) + recent requests table (bottom)
@@ -94,12 +114,13 @@ pub fn render(
     // Anomaly panel
     render_anomalies(frame, outer[2], anomalies);
 
-    // 7-day trend panel
-    render_trend(frame, outer[3], ledger);
-
-    // Per-request sparkline
-    let spark_data = ledger.sparkline_data(60);
-    widgets::render_sparkline(frame, outer[4], &spark_data);
+    if trend_h > 0 {
+        render_trend(frame, outer[3], ledger);
+    }
+    if spark_h > 0 {
+        let spark_data = ledger.sparkline_data(60);
+        widgets::render_sparkline(frame, outer[4], &spark_data);
+    }
 
     render_help(frame, outer[5]);
 }
@@ -358,7 +379,7 @@ fn render_anomalies(frame: &mut Frame, area: ratatui::layout::Rect, anomalies: &
 
     let lines: Vec<Line> = if anomalies.is_empty() {
         vec![Line::from(Span::styled(
-            "  No anomalies detected",
+            "  None yet. A request is flagged when it costs 2x or more its model's running average.",
             Theme::dim(),
         ))]
     } else {
@@ -414,7 +435,7 @@ fn render_anomalies(frame: &mut Frame, area: ratatui::layout::Rect, anomalies: &
 
 /// Render the cost forecast widget showing projected daily/monthly spend and trend.
 fn render_forecast(frame: &mut Frame, area: ratatui::layout::Rect, ledger: &CostLedger) {
-    // Build a SpendForecaster from all records (cumulative cost over time).
+    // Fit a line through cumulative spend over time.
     let mut forecaster = SpendForecaster::new();
     let mut cumulative = 0.0f64;
     for record in ledger.records() {
@@ -425,42 +446,47 @@ fn render_forecast(frame: &mut Frame, area: ratatui::layout::Rect, ledger: &Cost
 
     let lines = if let Some(ref fc) = fc {
         let (trend_char, trend_style) = match fc.trend {
-            Trend::Accelerating => ("↑", Theme::warn()),
-            Trend::Stable => ("→", Theme::normal()),
-            Trend::Decelerating => ("↓", Theme::ok()),
+            Trend::Accelerating => ("rising", Theme::warn()),
+            Trend::Stable => ("steady", Theme::normal()),
+            Trend::Decelerating => ("falling", Theme::ok()),
         };
         vec![
             Line::from(vec![
-                Span::styled("Proj/day:  ", Theme::dim()),
-                Span::styled(format!("${:.6}", fc.projected_daily_usd), Theme::ok()),
-                Span::raw("  "),
+                Span::styled("Per day:     ", Theme::dim()),
+                Span::styled(format!("${:.4}", fc.projected_daily_usd), Theme::ok()),
+                Span::raw(" "),
                 Span::styled(trend_char, trend_style),
             ]),
             Line::from(vec![
-                Span::styled("Proj/mo:   ", Theme::dim()),
-                Span::styled(
-                    format!("${:.4}", fc.projected_month_end_usd),
-                    Theme::warn(),
-                ),
+                Span::styled("Month-end:   ", Theme::dim()),
+                Span::styled(format!("${:.2}", fc.projected_month_end_usd), Theme::warn()),
             ]),
-            Line::from(vec![
-                Span::styled("Confidence:", Theme::dim()),
-                Span::styled(
-                    format!(" {:.0}%", fc.confidence * 100.0),
-                    Theme::normal(),
-                ),
-            ]),
+            Line::from(Span::styled(
+                format!("trend over all data, fit {:.0}%", fc.confidence * 100.0),
+                Theme::dim(),
+            )),
+        ]
+    } else if ledger.is_empty() {
+        vec![
+            Line::from(Span::styled("Per day:     --", Theme::dim())),
+            Line::from(Span::styled("Month-end:   --", Theme::dim())),
+            Line::from(Span::styled("waiting for requests", Theme::dim())),
         ]
     } else {
+        // Not enough time spread for a trend yet: fall back to the rate of
+        // the last hour, and say so.
+        let monthly = ledger.projected_monthly_usd(1);
         vec![
-            Line::from(Span::styled("Proj/day:  --", Theme::dim())),
-            Line::from(Span::styled("Proj/mo:   --", Theme::dim())),
+            Line::from(vec![
+                Span::styled("Per day:     ", Theme::dim()),
+                Span::styled(format!("${:.4}", monthly / 30.0), Theme::ok()),
+            ]),
+            Line::from(vec![
+                Span::styled("Month:       ", Theme::dim()),
+                Span::styled(format!("${monthly:.2}"), Theme::warn()),
+            ]),
             Line::from(Span::styled(
-                if ledger.len() < 2 {
-                    "(needs 2+ requests)"
-                } else {
-                    "(needs more time span)"
-                },
+                "at last hour's rate; trend soon",
                 Theme::dim(),
             )),
         ]
@@ -477,36 +503,74 @@ fn render_forecast(frame: &mut Frame, area: ratatui::layout::Rect, ledger: &Cost
 
 /// Render the 7-day historical spend trend as a sparkline.
 fn render_trend(frame: &mut Frame, area: ratatui::layout::Rect, ledger: &CostLedger) {
+    use ratatui::widgets::{Bar, BarGroup};
+
     let trend = ledger.seven_day_trend();
-    // Scale to integer micro-USD for the Sparkline widget
-    let data: Vec<u64> = trend
+    let today = chrono::Utc::now().date_naive();
+    let week_total: f64 = trend.iter().sum::<f64>() + 0.0;
+
+    let block = Block::default()
+        .title(format!(" Last 7 days  ${week_total:.4} "))
+        .borders(Borders::ALL)
+        .border_style(Theme::border());
+    let inner_w = area.width.saturating_sub(2);
+    // Seven bars share the width, one column of space between them.
+    let bar_w = (inner_w.saturating_sub(6) / 7).max(1);
+
+    let bars: Vec<Bar> = trend
         .iter()
-        .map(|&v| (v * 1_000_000.0) as u64)
+        .enumerate()
+        .map(|(i, &usd)| {
+            let day = today - chrono::Duration::days(6 - i as i64);
+            let label = if i == 6 {
+                "today".to_string()
+            } else {
+                day.format("%a %d").to_string()
+            };
+            let style = if i == 6 { Theme::warn() } else { Theme::ok() };
+            Bar::default()
+                .value((usd * 1_000_000.0).round() as u64)
+                .label(Line::from(label))
+                .text_value(if usd > 0.0 {
+                    format!("${usd:.4}")
+                } else {
+                    String::new()
+                })
+                .style(style)
+                .value_style(Theme::highlight().add_modifier(Modifier::BOLD))
+        })
         .collect();
 
-    // Build a label showing today's date and the span
-    let today = chrono::Utc::now().date_naive();
-    let start = today - chrono::Duration::days(6);
-    let title = format!(
-        " 7-Day Spend Trend ({} to {}) ",
-        start.format("%b %d"),
-        today.format("%b %d"),
-    );
-
-    let sparkline = Sparkline::default()
-        .block(
-            Block::default()
-                .title(title)
-                .borders(Borders::ALL)
-                .border_style(Theme::border()),
-        )
-        .data(&data)
-        .style(Theme::warn());
-    frame.render_widget(sparkline, area);
+    let chart = BarChart::default()
+        .block(block)
+        .data(BarGroup::default().bars(&bars))
+        .bar_width(bar_w)
+        .bar_gap(1)
+        .label_style(Theme::dim());
+    frame.render_widget(chart, area);
 }
 
 /// Render a cache hit/miss cost breakdown panel.
-fn render_cache_breakdown(frame: &mut Frame, area: ratatui::layout::Rect, ledger: &CostLedger) {
+fn render_cache_breakdown(
+    frame: &mut Frame,
+    area: ratatui::layout::Rect,
+    ledger: &CostLedger,
+    has_cache: bool,
+) {
+    if !has_cache {
+        let paragraph = Paragraph::new(Line::from(Span::styled(
+            "no cached tokens in this log",
+            Theme::dim(),
+        )))
+        .block(
+            Block::default()
+                .title(" Prompt Cache ")
+                .borders(Borders::ALL)
+                .border_style(Theme::border()),
+        );
+        frame.render_widget(paragraph, area);
+        return;
+    }
     let records = ledger.records();
     let total_cache_read: u64 = records.iter().map(|r| r.cache.cache_read_tokens).sum();
     let total_cache_write: u64 = records.iter().map(|r| r.cache.cache_write_tokens).sum();
@@ -539,7 +603,7 @@ fn render_cache_breakdown(frame: &mut Frame, area: ratatui::layout::Rect, ledger
     ];
     let paragraph = Paragraph::new(lines).block(
         Block::default()
-            .title(" Cache Breakdown ")
+            .title(" Prompt Cache ")
             .borders(Borders::ALL)
             .border_style(Theme::border()),
     );
