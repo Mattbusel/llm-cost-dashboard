@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+PackageIdentifier: Mattbusel.LlmDash
+PackageVersion: 1.2.1
+PackageLocale: en-US
+Publisher: Mattbusel
+PublisherUrl: https://github.com/Mattbusel
+PublisherSupportUrl: https://github.com/Mattbusel/llm-cost-dashboard/issues
+Author: Matt Busel
+PackageName: llm-dash
+PackageUrl: https://github.com/Mattbusel/llm-cost-dashboard
+License: MIT
+LicenseUrl: https://github.com/Mattbusel/llm-cost-dashboard/blob/master/LICENSE
+ShortDescription: See what your LLM API calls cost, live in your terminal.
+Description: A terminal dashboard that tails a newline-delimited JSON log of your model calls and prices each one from a built-in table of 83 models, showing spend, a budget gauge, cost per model, forecasts and cost anomalies. Also prints one-shot reports (cheapest model for your workload, forecast, anomalies, exports).
+Moniker: llm-dash
+Tags:
+  - llm
+  - cost
+  - openai
+  - anthropic
+  - tui
+ReleaseNotesUrl: https://github.com/Mattbusel/llm-cost-dashboard/releases/tag/v1.2.1
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0
