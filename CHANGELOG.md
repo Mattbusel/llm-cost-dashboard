@@ -7,6 +7,29 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-09-25
+
+### Fixed
+
+- Log lines no longer draw over the dashboard: without `RUST_LOG`, the TUI
+  logs nothing and the one-shot reports log warnings only (was `info`).
+- An empty ledger showed `$-0.0000`; it now shows `$0.0000`.
+- The footer suggested piping JSON into `llm-dash`, which it does not read;
+  it now lists the keys and the `--log-file` usage.
+- Cost by Model labels were cut to three characters; the chart is now
+  horizontal with full model names and dollar amounts.
+
+### Changed
+
+- Dashboard: title bar shows request count, spend and budget; empty state
+  explains how to load data; left-column panels no longer clip their lines;
+  savings suggestions fit the column; body text uses the terminal's default
+  colour so light themes stay readable; `NO_COLOR` is respected.
+- `--help` has a plain description, examples and the log line format.
+- Install: `install.sh`, `install.ps1`, cargo-binstall metadata, Homebrew and
+  Scoop packages, winget manifests in `packaging/winget/`.
+- README: banner, recorded demo GIF, install table, 3-step guide, real output.
+
 ## [1.2.0] - 2026-09-25
 
 ### Added

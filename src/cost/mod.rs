@@ -196,7 +196,9 @@ impl CostLedger {
 
     /// Sum of all recorded costs in USD.
     pub fn total_usd(&self) -> f64 {
-        self.records.iter().map(|r| r.total_cost_usd).sum()
+        // `+ 0.0` turns the -0.0 an empty f64 sum yields into 0.0, so an empty
+        // ledger never prints as "$-0.00".
+        self.records.iter().map(|r| r.total_cost_usd).sum::<f64>() + 0.0
     }
 
     /// Aggregated stats keyed by model name.
@@ -281,7 +283,7 @@ impl CostLedger {
             .filter(|r| r.timestamp >= cutoff)
             .map(|r| r.total_cost_usd)
             .sum();
-        (window_total / window_hours as f64) * 24.0 * 30.0
+        (window_total / window_hours as f64) * 24.0 * 30.0 + 0.0
     }
 
     /// Total number of records in the ledger.

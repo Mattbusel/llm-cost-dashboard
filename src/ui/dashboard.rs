@@ -18,7 +18,7 @@ use crate::forecast::{ForecastResult, SpendForecaster, Trend};
 use crate::recommendations::ModelRecommender;
 use crate::ui::{theme::Theme, widgets};
 
-/// Full dashboard rendering — called on every tick.
+/// Full dashboard rendering, called on every tick.
 ///
 /// # Parameters
 ///
@@ -50,7 +50,7 @@ pub fn render(
         ])
         .split(area);
 
-    render_title(frame, outer[0], export_status, current_session);
+    render_title(frame, outer[0], ledger, budget, export_status, current_session);
 
     // Main content: left col + right col
     let main = Layout::default()
@@ -62,11 +62,11 @@ pub fn render(
     let left = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage(20),
-            Constraint::Percentage(20),
-            Constraint::Percentage(20),
-            Constraint::Percentage(20),
-            Constraint::Percentage(20),
+            Constraint::Length(5), // summary: 3 lines
+            Constraint::Length(3), // budget gauge
+            Constraint::Length(5), // forecast: 3 lines
+            Constraint::Length(6), // cache: 4 lines
+            Constraint::Min(3),    // savings: whatever is left
         ])
         .split(main[0]);
 
@@ -85,7 +85,11 @@ pub fn render(
         .split(main[1]);
 
     render_model_chart(frame, right[0], ledger);
-    render_requests_table(frame, right[1], ledger, scroll_offset);
+    if ledger.is_empty() {
+        render_empty_state(frame, right[1]);
+    } else {
+        render_requests_table(frame, right[1], ledger, scroll_offset);
+    }
 
     // Anomaly panel
     render_anomalies(frame, outer[2], anomalies);
@@ -103,27 +107,79 @@ pub fn render(
 fn render_title(
     frame: &mut Frame,
     area: ratatui::layout::Rect,
+    ledger: &CostLedger,
+    budget: &BudgetEnvelope,
     export_status: Option<&str>,
     current_session: Option<&str>,
 ) {
     let mut spans = vec![
-        Span::styled(" LLM Cost Dashboard", Theme::title()),
+        Span::styled(" llm-dash ", Theme::title()),
+        Span::styled(" LLM spend, live", Theme::dim()),
         Span::styled(
-            "  [q: quit | r: reset | d: demo | e: export | x: explorer | j/k: scroll]",
-            Theme::dim(),
+            format!(
+                "   {} requests   ${:.4} spent   ${:.2} budget",
+                ledger.len(),
+                ledger.total_usd(),
+                budget.limit_usd
+            ),
+            Theme::normal(),
         ),
     ];
     if let Some(session) = current_session {
-        spans.push(Span::styled(
-            format!("  [session: {session}]"),
-            Theme::warn(),
-        ));
+        spans.push(Span::styled(format!("   session: {session}"), Theme::warn()));
     }
     if let Some(status) = export_status {
-        spans.push(Span::styled(format!("  Exported: {status}"), Theme::ok()));
+        spans.push(Span::styled(format!("   Exported: {status}"), Theme::ok()));
     }
     let title = Paragraph::new(Line::from(spans));
     frame.render_widget(title, area);
+}
+
+/// Shown in place of the requests table before any request has been loaded.
+fn render_empty_state(frame: &mut Frame, area: ratatui::layout::Rect) {
+    let key = |k: &'static str| Span::styled(k, Theme::header());
+    let lines = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            "  No requests yet.",
+            Theme::normal().add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  Press ", Theme::dim()),
+            key("d"),
+            Span::styled(" to load demo data and look around.", Theme::dim()),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  To watch your own traffic, quit and run:",
+            Theme::dim(),
+        )),
+        Line::from(Span::styled(
+            "    llm-dash --log-file requests.ndjson --budget 50",
+            Theme::ok(),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  One JSON object per line, for example:",
+            Theme::dim(),
+        )),
+        Line::from(Span::styled(
+            "    {\"model\":\"gpt-4o-mini\",\"input_tokens\":512,\"output_tokens\":256,\"latency_ms\":340}",
+            Theme::normal(),
+        )),
+        Line::from(Span::styled(
+            "  Lines your app appends while the dashboard is open show up live.",
+            Theme::dim(),
+        )),
+    ];
+    let paragraph = Paragraph::new(lines).block(
+        Block::default()
+            .title(" Recent Requests ")
+            .borders(Borders::ALL)
+            .border_style(Theme::border()),
+    );
+    frame.render_widget(paragraph, area);
 }
 
 /// Render a compact API key validation status line in the header area.
@@ -151,42 +207,84 @@ pub fn render_validation_status(
 }
 
 fn render_help(frame: &mut Frame, area: ratatui::layout::Rect) {
-    let help = Paragraph::new(Line::from(Span::styled(
-        " Pipe data: echo '{\"model\":\"claude-sonnet-4-6\",\"input_tokens\":512,\"output_tokens\":256,\"latency_ms\":340}' | llm-dash",
+    let mut spans = Vec::new();
+    for (k, what) in [
+        ("q", "quit"),
+        ("d", "demo data"),
+        ("r", "reset"),
+        ("e", "export"),
+        ("x", "explorer"),
+        ("j/k", "scroll"),
+    ] {
+        spans.push(Span::styled(format!(" {k} "), Theme::header()));
+        spans.push(Span::styled(format!("{what}  "), Theme::dim()));
+    }
+    spans.push(Span::styled(
+        "  your data: llm-dash --log-file requests.ndjson",
         Theme::dim(),
-    )));
-    frame.render_widget(help, area);
+    ));
+    frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
 fn render_model_chart(frame: &mut Frame, area: ratatui::layout::Rect, ledger: &CostLedger) {
-    let by_model = ledger.by_model();
-    // We need owned strings so we collect and format
-    let model_data: Vec<(String, u64)> = {
-        let mut v: Vec<_> = by_model
-            .values()
-            .map(|s| {
-                let label = s.model.chars().take(16).collect::<String>();
-                let val = (s.total_cost_usd * 1_000_000.0) as u64;
-                (label, val)
-            })
-            .collect();
-        v.sort_by_key(|x| std::cmp::Reverse(x.1));
-        v.truncate(8);
-        v
-    };
-    let bar_data: Vec<(&str, u64)> = model_data.iter().map(|(s, v)| (s.as_str(), *v)).collect();
+    use ratatui::widgets::{Bar, BarGroup};
+
+    let block = Block::default()
+        .title(" Cost by Model ")
+        .borders(Borders::ALL)
+        .border_style(Theme::border());
+
+    let mut rows: Vec<(String, f64)> = ledger
+        .by_model()
+        .values()
+        .map(|s| (s.model.clone(), s.total_cost_usd))
+        .collect();
+    rows.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    // One bar per text row inside the border.
+    rows.truncate(area.height.saturating_sub(2).max(1) as usize);
+
+    if rows.is_empty() {
+        let empty = Paragraph::new(Line::from(Span::styled(
+            " One bar per model appears here as requests come in.",
+            Theme::dim(),
+        )))
+        .block(block);
+        frame.render_widget(empty, area);
+        return;
+    }
+
+    let label_w = rows
+        .iter()
+        .map(|(m, _)| m.chars().count())
+        .max()
+        .unwrap_or(0)
+        .min(24);
+    let bars: Vec<Bar> = rows
+        .iter()
+        .map(|(model, usd)| {
+            let label: String = model.chars().take(label_w).collect();
+            Bar::default()
+                // micro-dollars keep small costs visible as integer bar lengths
+                .value((usd * 1_000_000.0).round() as u64)
+                .label(Line::from(vec![
+                    Span::styled(format!("{label:<label_w$} "), Theme::normal()),
+                    Span::styled(
+                        format!("{:>9} ", format!("${usd:.4}")),
+                        Theme::normal().add_modifier(Modifier::BOLD),
+                    ),
+                ]))
+                .text_value(String::new())
+                .style(Theme::ok())
+        })
+        .collect();
+
     let chart = BarChart::default()
-        .block(
-            Block::default()
-                .title(" Cost by Model (μUSD) ")
-                .borders(Borders::ALL)
-                .border_style(Theme::border()),
-        )
-        .data(&bar_data)
-        .bar_width(3)
-        .bar_gap(1)
-        .bar_style(Theme::ok())
-        .value_style(Theme::header());
+        .block(block)
+        .direction(Direction::Horizontal)
+        .data(BarGroup::default().bars(&bars))
+        .bar_width(1)
+        .bar_gap(0)
+        .label_style(Theme::normal());
     frame.render_widget(chart, area);
 }
 
@@ -357,7 +455,14 @@ fn render_forecast(frame: &mut Frame, area: ratatui::layout::Rect, ledger: &Cost
         vec![
             Line::from(Span::styled("Proj/day:  --", Theme::dim())),
             Line::from(Span::styled("Proj/mo:   --", Theme::dim())),
-            Line::from(Span::styled("(need ≥2 records)", Theme::dim())),
+            Line::from(Span::styled(
+                if ledger.len() < 2 {
+                    "(needs 2+ requests)"
+                } else {
+                    "(needs more time span)"
+                },
+                Theme::dim(),
+            )),
         ]
     };
 
@@ -383,7 +488,7 @@ fn render_trend(frame: &mut Frame, area: ratatui::layout::Rect, ledger: &CostLed
     let today = chrono::Utc::now().date_naive();
     let start = today - chrono::Duration::days(6);
     let title = format!(
-        " 7-Day Spend Trend ({} → {}) ",
+        " 7-Day Spend Trend ({} to {}) ",
         start.format("%b %d"),
         today.format("%b %d"),
     );
@@ -405,8 +510,8 @@ fn render_cache_breakdown(frame: &mut Frame, area: ratatui::layout::Rect, ledger
     let records = ledger.records();
     let total_cache_read: u64 = records.iter().map(|r| r.cache.cache_read_tokens).sum();
     let total_cache_write: u64 = records.iter().map(|r| r.cache.cache_write_tokens).sum();
-    let cache_read_cost: f64 = records.iter().map(|r| r.cache.cache_read_cost_usd).sum();
-    let cache_write_cost: f64 = records.iter().map(|r| r.cache.cache_write_cost_usd).sum();
+    let cache_read_cost: f64 = records.iter().map(|r| r.cache.cache_read_cost_usd).sum::<f64>() + 0.0;
+    let cache_write_cost: f64 = records.iter().map(|r| r.cache.cache_write_cost_usd).sum::<f64>() + 0.0;
 
     let lines = vec![
         Line::from(vec![
@@ -457,17 +562,25 @@ fn render_savings_opportunities(
         ))]
     } else {
         // Show top 3 suggestions.
+        // Two lines per suggestion so it fits the narrow left column.
         suggestions
             .iter()
             .take(3)
-            .map(|s| {
-                Line::from(vec![
-                    Span::styled(
-                        format!("{:.0}% ", s.saving_pct),
+            .flat_map(|s| {
+                [
+                    Line::from(vec![
+                        Span::styled(s.current_model.clone(), Theme::normal()),
+                        Span::styled(" -> ", Theme::dim()),
+                        Span::styled(s.suggested_model.clone(), Theme::ok()),
+                    ]),
+                    Line::from(Span::styled(
+                        format!(
+                            "  save {:.0}%, ${:.2}/mo",
+                            s.saving_pct, s.projected_monthly_saving_usd
+                        ),
                         Theme::ok(),
-                    ),
-                    Span::styled(s.summary_line(), Theme::normal()),
-                ])
+                    )),
+                ]
             })
             .collect()
     };

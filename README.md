@@ -1,37 +1,38 @@
-# llm-cost-dashboard
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Mattbusel/llm-cost-dashboard/master/assets/banner.png" alt="llm-dash: see what every LLM call costs, live in your terminal" width="100%">
+</p>
+
+# llm-dash
+
+**See what your AI model calls cost, live in your terminal, before the bill arrives.**
 
 [![crates.io](https://img.shields.io/crates/v/llm-cost-dashboard.svg)](https://crates.io/crates/llm-cost-dashboard)
 [![docs.rs](https://docs.rs/llm-cost-dashboard/badge.svg)](https://docs.rs/llm-cost-dashboard)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A terminal dashboard for LLM spend: feed it a log of your model calls and see cost per request, cost per model, budget used and a projected monthly bill, priced from a built-in table of 83 models. Runs locally, no account or database.
-
-Token prices differ by 100x between models, and bills arrive after the fact. `llm-dash` turns a newline-delimited JSON log of requests (model, input tokens, output tokens, latency) into a live [ratatui](https://ratatui.rs) dashboard, and can also answer one-off questions from the command line: which model would be cheapest for this workload, what will this month cost, where are the spikes, what changed between two days. Everything it does is also available as a Rust library.
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Mattbusel/llm-cost-dashboard/master/assets/dashboard.gif" alt="llm-dash tailing a request log: the budget gauge fills, a 60,000-token gpt-4o call is flagged as a 28.7x cost anomaly, then the cost explorer sorts by price" width="100%">
+</p>
+<p align="center"><sub>A real <code>llm-dash</code> run recorded today. A script appends sample requests to <code>requests.ndjson</code> while the dashboard tails the file; one 60,000-token prompt gets flagged.</sub></p>
 
 ## Install
 
-### Download (no Rust needed)
-
-Grab the file for your system from the [latest release](https://github.com/Mattbusel/llm-cost-dashboard/releases/latest), unzip it, and run `llm-dash` from a terminal:
-
-| System | File |
+| Your system | Command |
 |---|---|
-| Windows (64-bit) | `llm-cost-dashboard-vX.Y.Z-x86_64-pc-windows-msvc.zip` (contains `llm-dash.exe`) |
-| macOS, Apple Silicon (M1 and later) | `llm-cost-dashboard-vX.Y.Z-aarch64-apple-darwin.tar.gz` |
-| macOS, Intel | `llm-cost-dashboard-vX.Y.Z-x86_64-apple-darwin.tar.gz` |
-| Linux (x86_64) | `llm-cost-dashboard-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz` |
+| **Windows** (PowerShell) | `irm https://raw.githubusercontent.com/Mattbusel/llm-cost-dashboard/master/install.ps1 \| iex` |
+| **Windows** (Scoop) | `scoop bucket add mattbusel https://github.com/Mattbusel/scoop-bucket` then `scoop install llm-dash` |
+| **macOS / Linux** (Homebrew) | `brew install mattbusel/tap/llm-dash` |
+| **macOS / Linux** (script) | `curl -fsSL https://raw.githubusercontent.com/Mattbusel/llm-cost-dashboard/master/install.sh \| sh` |
+| **Rust users** (prebuilt) | `cargo binstall llm-cost-dashboard` |
+| **Rust users** (from source) | `cargo install llm-cost-dashboard` |
+| **Anything else** | Download a zip or tarball from [Releases](https://github.com/Mattbusel/llm-cost-dashboard/releases/latest) |
 
-`SHA256SUMS.txt` in the release lists a checksum for every file.
+Every method installs one program, `llm-dash`. The scripts check the download against the release's `SHA256SUMS.txt` before installing.
 
-The binaries are not code-signed. On Windows, SmartScreen may say "Windows protected your PC" or "unknown publisher": click **More info**, then **Run anyway**. On macOS, if it says the developer cannot be verified, right-click the file in Finder and choose **Open** (or run `xattr -d com.apple.quarantine llm-dash`).
+<details>
+<summary>Unsigned-binary warnings, and building from source</summary>
 
-### With Cargo
-
-```bash
-cargo install llm-cost-dashboard
-```
-
-### From source
+The binaries are not code-signed. On Windows, SmartScreen may say "Windows protected your PC": click **More info**, then **Run anyway**. On macOS, if it says the developer cannot be verified, run `xattr -d com.apple.quarantine "$(which llm-dash)"`.
 
 ```bash
 git clone https://github.com/Mattbusel/llm-cost-dashboard
@@ -39,16 +40,68 @@ cd llm-cost-dashboard
 cargo build --release     # binary at target/release/llm-dash
 ```
 
-## Quick start
+</details>
 
-The binary is called `llm-dash`.
+## Use it in 3 steps
+
+**1. Look around with sample data** (no API key, no setup):
 
 ```bash
-llm-dash --demo                               # dashboard with synthetic Claude / GPT-4o / o3-mini traffic
-llm-dash --budget 50 --log-file requests.ndjson
+llm-dash --demo
 ```
 
-Your log is one JSON object per line:
+You get the dashboard above, filled with 20 sample Claude, GPT and Gemini requests. Press `x` for the cost explorer, `q` to quit.
+
+**2. Point it at your own calls.** Have your app append one JSON line per model call to a file:
+
+```json
+{"model":"gpt-4o-mini","input_tokens":512,"output_tokens":256,"latency_ms":340}
+```
+
+**3. Watch that file live, with a monthly budget:**
+
+```bash
+llm-dash --log-file requests.ndjson --budget 50
+```
+
+New lines show up as your app writes them. The budget gauge turns yellow at 80% and red past 100%, and a call that costs far more than usual for its model appears under **Cost Anomalies**.
+
+## Results
+
+What the one-shot reports print (real output from `llm-dash 1.2.1` on today's demo data):
+
+```text
+$ llm-dash --demo --compare
+Multi-Provider Cost Comparison  (83 models, 22/day requests, 730in/348out avg tokens)
+
+  Model                                           Monthly USD   Daily USD   Per-1k-req USD  Provider
+  ----------------------------------------------------------------------------------------------------
+  ministral-3b-2410                                    0.0285      0.0009           0.0431  Mistral
+  llama-3.1-8b-instant                                 0.0425      0.0014           0.0643  Meta (Llama)
+  amazon.nova-micro-v1:0                               0.0490      0.0016           0.0743  AWS Bedrock
+  gemini-1.5-flash-8b                                  0.0525      0.0018           0.0796  Google
+  ... 79 more rows ...
+Cheapest: ministral-3b-2410 ($0.0285/mo)  |  Most expensive: gpt-4.5-preview ($70.5870/mo)  |  Spread: 2480x
+```
+
+```text
+$ llm-dash --demo --budget 50 --forecast
+Holt-Winters Cost Forecast (based on 20 records)
+
+  Next hour:  $0.005665
+  Next day:   $0.1785
+  Next week:  $3.13
+  Next month: $44.33
+
+  80% CI (next hour): [$0.000000, $0.013657]
+
+  WARNING: forecasted monthly spend ($44.33) exceeds 80% of budget ($50.00)!
+```
+
+In the recording above, 34 requests cost $0.4996 in total, and one gpt-4o call with 60,000 input tokens cost $0.3375 on its own: 28.7 times the running average for that model, which is what the anomaly panel reports.
+
+## Your log format
+
 
 ```json
 {"model":"claude-sonnet-4-6","input_tokens":512,"output_tokens":256,"latency_ms":340,"timestamp":"2026-09-25T14:03:00Z"}
@@ -56,11 +109,11 @@ Your log is one JSON object per line:
 {"model":"gpt-4o","input_tokens":900,"output_tokens":0,"latency_ms":30000,"error":"timeout"}
 ```
 
-`model`, `input_tokens`, `output_tokens` and `latency_ms` are required; `provider`, `error` and `timestamp` are optional. `timestamp` (also accepted as `ts`, `time` or `created_at`) can be an RFC 3339 string or Unix seconds or milliseconds; a line without one is dated when it is read. The dashboard keeps watching `--log-file`, so lines your app appends while it is open show up live. Malformed lines are skipped with a warning on stderr (`RUST_LOG=warn`). Model names are matched case-insensitively; unknown models are priced at a fallback of $5 / $15 per million tokens.
+`model`, `input_tokens`, `output_tokens` and `latency_ms` are required; `provider`, `error` and `timestamp` are optional. `timestamp` (also accepted as `ts`, `time` or `created_at`) can be an RFC 3339 string or Unix seconds or milliseconds; a line without one is dated when it is read. The dashboard keeps watching `--log-file`, so lines your app appends while it is open show up live. Malformed lines are skipped (run with `RUST_LOG=warn` to see why each one was skipped). Model names are matched case-insensitively; unknown models are priced at a fallback of $5 / $15 per million tokens.
 
 ## The dashboard
 
-Panels: **Summary** (total and projected monthly spend), **Budget** gauge, **Forecast**, **Cache Breakdown**, **Cost by Model** bar chart, **Recent Requests** table, **Savings Opportunities**, and a sparkline of the last 60 request costs. The screen refreshes every 250 ms.
+Panels: **Summary** (total and projected monthly spend), **Budget** gauge, **Forecast**, **Cache Breakdown**, **Savings Opportunities** (cheaper models for your traffic), **Cost by Model** bars, **Recent Requests** table, **Cost Anomalies**, a 7-day trend and a sparkline of the last 60 request costs. The screen refreshes every 250 ms. Before any data arrives, the requests panel shows how to feed it. Colors follow your terminal theme and are turned off when `NO_COLOR` is set.
 
 | Key | Action |
 |---|---|
@@ -110,7 +163,7 @@ llm-dash --log-file requests.ndjson --diff 2026-09-01 2026-09-02   # Markdown di
 | `--anomaly` | off | Print an anomaly report and exit |
 | `--diff <A> <B>` | | Compare two date-prefix periods and exit |
 
-`RUST_LOG` controls log verbosity; logs go to stderr.
+`RUST_LOG` controls log verbosity; logs go to stderr. Without it, the reports print warnings only and the dashboard prints no logs at all, since stderr lines would be drawn over it.
 
 ### HTTP API
 
@@ -375,9 +428,14 @@ Webhook delivery needs the default `webhooks` feature; build with `--no-default-
 
 ## Library usage
 
+Everything the dashboard does is also a Rust library ([docs.rs](https://docs.rs/llm-cost-dashboard)).
+
+<details>
+<summary>Examples: ledger, cheapest model, budgets, anomalies, forecasts, tags</summary>
+
 ```toml
 [dependencies]
-llm-cost-dashboard = { git = "https://github.com/Mattbusel/llm-cost-dashboard" }
+llm-cost-dashboard = "1.2"
 ```
 
 The crate is `llm_cost_dashboard`. A ledger of priced requests:
@@ -483,7 +541,12 @@ let report = TagReport::generate(&store, "project");
 
 Other public modules include `budget::planner` (period budgets split by percentage, reconciled against actuals), `tenant` (per-tenant quotas and reports), `alerts` (TOML rule engine behind `--alerts`), `alerting` and `webhook` (Slack and generic webhooks with cooldowns), `validator` (checks Anthropic, OpenAI and Google API keys against their model-list endpoints), `recommendations` (cheaper-model suggestions), `session`, `export`, `trends`, `model_compare`, `prediction` and `diff`. See the rustdoc (`cargo doc --open`) for their APIs.
 
+</details>
+
 ## How it works
+
+<details>
+<summary>Source layout</summary>
 
 ```
 src/
@@ -502,6 +565,8 @@ src/
 tests/, benches/     integration tests and criterion benchmarks
 ```
 
+</details>
+
 ## Status and limitations
 
 - The dashboard follows `--log-file` as it grows (polling every half second) but does not read stdin. The one-shot reports (`--forecast`, `--diff`, exports) read the file once.
@@ -513,7 +578,7 @@ tests/, benches/     integration tests and criterion benchmarks
 ```bash
 cargo test
 cargo bench
-RUST_LOG=debug cargo run -- --demo
+RUST_LOG=debug cargo run -- --demo --compare
 ```
 
 ## License
