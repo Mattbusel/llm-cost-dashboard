@@ -7,7 +7,7 @@
 <meta name="description" content="llm-dash is a terminal dashboard that prices every LLM API call from a log file and shows spend, budget, cost per model, forecasts and cost spikes. Free, open source, runs locally.">
 <meta property="og:title" content="llm-dash: see what your LLM calls cost">
 <meta property="og:description" content="A live terminal dashboard for LLM spend. Prices 83 models. Runs locally, no account.">
-<meta property="og:image" content="https://mattbusel.github.io/llm-cost-dashboard/assets/social.png">
+<meta property="og:image" content="https://gitlab.com/mattbusel/llm-cost-dashboard/assets/social.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230e1311'/%3E%3Ctext x='16' y='23' font-family='monospace' font-size='20' font-weight='700' text-anchor='middle' fill='%237bd88f'%3E$%3C/text%3E%3C/svg%3E">
 <style>
@@ -120,7 +120,7 @@ footer a{color:var(--mute)}
 <div class="wrap">
 <header class="top">
   <a class="mark" href="#">llm<b>-</b>dash</a>
-  <nav><a href="#how">How it works</a><a href="#reports">Reports</a><a href="https://github.com/Mattbusel/llm-cost-dashboard">GitHub</a></nav>
+  <nav><a href="#how">How it works</a><a href="#reports">Reports</a><a href="https://gitlab.com/mattbusel/llm-cost-dashboard">GitHub</a></nav>
 </header>
 
 <div class="hero">
@@ -137,12 +137,12 @@ footer a{color:var(--mute)}
         <button role="tab" aria-selected="false" aria-controls="p-cargo" id="t-cargo">Rust</button>
       </div>
       <div class="panel on" role="tabpanel" id="p-win" aria-labelledby="t-win">
-        <div class="cmd ps"><code>irm https://raw.githubusercontent.com/Mattbusel/llm-cost-dashboard/master/install.ps1 | iex</code><button class="copy">Copy</button></div>
-        <p class="alt">Or with Scoop: <code>scoop bucket add mattbusel https://github.com/Mattbusel/scoop-bucket</code>, then <code>scoop install llm-dash</code></p>
+        <div class="cmd ps"><code>irm https://gitlab.com/mattbusel/llm-cost-dashboard/-/raw/master/install.ps1 | iex</code><button class="copy">Copy</button></div>
+        <p class="alt">Or with Scoop: <code>scoop bucket add mattbusel https://gitlab.com/mattbusel/scoop-bucket</code>, then <code>scoop install llm-dash</code></p>
       </div>
       <div class="panel" role="tabpanel" id="p-nix" aria-labelledby="t-nix">
         <div class="cmd"><code>brew install mattbusel/tap/llm-dash</code><button class="copy">Copy</button></div>
-        <p class="alt">No Homebrew? <code>curl -fsSL https://raw.githubusercontent.com/Mattbusel/llm-cost-dashboard/master/install.sh | sh</code></p>
+        <p class="alt">No Homebrew? <code>curl -fsSL https://gitlab.com/mattbusel/llm-cost-dashboard/-/raw/master/install.sh | sh</code></p>
       </div>
       <div class="panel" role="tabpanel" id="p-cargo" aria-labelledby="t-cargo">
         <div class="cmd"><code>cargo binstall llm-cost-dashboard</code><button class="copy">Copy</button></div>
@@ -253,10 +253,10 @@ Holt-Winters Cost Forecast (based on 20 records)
 
 <footer><div class="wrap">
   llm-dash is free and open source (MIT). Prices come from a static table in the source; check them against your provider.
-  <br><a href="https://github.com/Mattbusel/llm-cost-dashboard">Source on GitHub</a> ·
+  <br><a href="https://gitlab.com/mattbusel/llm-cost-dashboard">Source on GitHub</a> ·
   <a href="https://crates.io/crates/llm-cost-dashboard">crates.io</a> ·
   <a href="https://docs.rs/llm-cost-dashboard">Library docs</a> ·
-  <a href="https://github.com/Mattbusel/llm-cost-dashboard/releases/latest">Downloads</a>
+  <a href="https://gitlab.com/mattbusel/llm-cost-dashboard/-/releases">Downloads</a>
 </div></footer>
 
 <script>

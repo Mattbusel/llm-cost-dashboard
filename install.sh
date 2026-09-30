@@ -1,7 +1,7 @@
 #!/bin/sh
 # Install llm-dash (llm-cost-dashboard) from the latest GitHub release.
 #
-#   curl -fsSL https://raw.githubusercontent.com/Mattbusel/llm-cost-dashboard/master/install.sh | sh
+#   curl -fsSL https://gitlab.com/mattbusel/llm-cost-dashboard/-/raw/master/install.sh | sh
 #
 # Options (environment variables):
 #   LLM_DASH_VERSION       release tag to install, e.g. v1.2.1 (default: latest)

@@ -32,7 +32,7 @@ built-in table of 83 models.",
 Log line format:
   {\"model\":\"gpt-4o-mini\",\"input_tokens\":512,\"output_tokens\":256,\"latency_ms\":340}
 
-Docs: https://github.com/Mattbusel/llm-cost-dashboard",
+Docs: https://gitlab.com/mattbusel/llm-cost-dashboard",
     version,
     author
 )]

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Mattbusel/llm-cost-dashboard/master/assets/banner.png" alt="llm-dash: see what every LLM call costs, live in your terminal" width="100%">
+  <img src="https://gitlab.com/mattbusel/llm-cost-dashboard/-/raw/master/assets/banner.png" alt="llm-dash: see what every LLM call costs, live in your terminal" width="100%">
 </p>
 
 <h3 align="center">See what your AI model calls cost, live in your terminal, before the bill arrives.</h3>
@@ -8,22 +8,22 @@
 [![docs.rs](https://docs.rs/llm-cost-dashboard/badge.svg)](https://docs.rs/llm-cost-dashboard)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-<p align="center"><a href="https://mattbusel.github.io/llm-cost-dashboard/"><b>Website</b></a> · <a href="#install">Install</a> · <a href="#use-it-in-3-steps">Use it in 3 steps</a> · <a href="https://docs.rs/llm-cost-dashboard">Library docs</a></p>
+<p align="center"><a href="https://gitlab.com/mattbusel/llm-cost-dashboard/"><b>Website</b></a> · <a href="#install">Install</a> · <a href="#use-it-in-3-steps">Use it in 3 steps</a> · <a href="https://docs.rs/llm-cost-dashboard">Library docs</a></p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Mattbusel/llm-cost-dashboard/master/assets/dashboard.gif" alt="llm-dash tailing a request log: new requests stream in, a 60,000-token gpt-4o call is flagged as a 26.7x cost anomaly, then the cost explorer sorts by price and opens that call" width="100%">
+  <img src="https://gitlab.com/mattbusel/llm-cost-dashboard/-/raw/master/assets/dashboard.gif" alt="llm-dash tailing a request log: new requests stream in, a 60,000-token gpt-4o call is flagged as a 26.7x cost anomaly, then the cost explorer sorts by price and opens that call" width="100%">
 </p>
 ## Install
 
 | Your system | Command |
 |---|---|
-| **Windows** (PowerShell) | `irm https://raw.githubusercontent.com/Mattbusel/llm-cost-dashboard/master/install.ps1 \| iex` |
-| **Windows** (Scoop) | `scoop bucket add mattbusel https://github.com/Mattbusel/scoop-bucket` then `scoop install llm-dash` |
+| **Windows** (PowerShell) | `irm https://gitlab.com/mattbusel/llm-cost-dashboard/-/raw/master/install.ps1 \| iex` |
+| **Windows** (Scoop) | `scoop bucket add mattbusel https://gitlab.com/mattbusel/scoop-bucket` then `scoop install llm-dash` |
 | **macOS / Linux** (Homebrew) | `brew install mattbusel/tap/llm-dash` |
-| **macOS / Linux, incl. ARM** (script) | `curl -fsSL https://raw.githubusercontent.com/Mattbusel/llm-cost-dashboard/master/install.sh \| sh` |
+| **macOS / Linux, incl. ARM** (script) | `curl -fsSL https://gitlab.com/mattbusel/llm-cost-dashboard/-/raw/master/install.sh \| sh` |
 | **Rust users** (prebuilt) | `cargo binstall llm-cost-dashboard` |
 | **Rust users** (from source) | `cargo install llm-cost-dashboard` |
-| **Anything else** | Download a zip or tarball from [Releases](https://github.com/Mattbusel/llm-cost-dashboard/releases/latest) |
+| **Anything else** | Download a zip or tarball from [Releases](https://gitlab.com/mattbusel/llm-cost-dashboard/-/releases) |
 
 Every method installs one program, `llm-dash`. The scripts check the download against the release's `SHA256SUMS.txt` before installing.
 

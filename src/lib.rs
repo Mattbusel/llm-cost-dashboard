@@ -4,11 +4,11 @@
 //! Price your LLM API calls and total them up: the library behind the
 //! `llm-dash` terminal dashboard.
 //!
-//! ![llm-dash dashboard](https://raw.githubusercontent.com/Mattbusel/llm-cost-dashboard/master/assets/dashboard.gif)
+//! ![llm-dash dashboard](https://gitlab.com/mattbusel/llm-cost-dashboard/-/raw/master/assets/dashboard.gif)
 //!
 //! Want the dashboard itself? Install the binary with
 //! `cargo install llm-cost-dashboard` (or see the
-//! [README](https://github.com/Mattbusel/llm-cost-dashboard#install) for
+//! [README](https://gitlab.com/mattbusel/llm-cost-dashboard#install) for
 //! Homebrew, Scoop and one-line installers) and run `llm-dash --demo`.
 //!
 //! ## Quick example

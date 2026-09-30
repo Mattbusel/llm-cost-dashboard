@@ -9,7 +9,7 @@ NestedInstallerFiles:
 ReleaseDate: 2026-09-26
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/Mattbusel/llm-cost-dashboard/releases/download/v1.2.2/llm-cost-dashboard-v1.2.2-x86_64-pc-windows-msvc.zip
+    InstallerUrl: https://gitlab.com/mattbusel/llm-cost-dashboard/-/releases
     InstallerSha256: BF3E6E37D041DA516B083094F1775CC6A1330237EACAC661B24FF65CB5AA8633
 ManifestType: installer
 ManifestVersion: 1.6.0
