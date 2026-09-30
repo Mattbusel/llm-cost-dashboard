@@ -15,30 +15,18 @@
 </p>
 ## Install
 
-| Your system | Command |
-|---|---|
-| **Windows** (PowerShell) | `irm https://gitlab.com/mattbusel/llm-cost-dashboard/-/raw/master/install.ps1 \| iex` |
-| **Windows** (Scoop) | `scoop bucket add mattbusel https://gitlab.com/mattbusel/scoop-bucket` then `scoop install llm-dash` |
-| **macOS / Linux** (Homebrew) | `brew install mattbusel/tap/llm-dash` |
-| **macOS / Linux, incl. ARM** (script) | `curl -fsSL https://gitlab.com/mattbusel/llm-cost-dashboard/-/raw/master/install.sh \| sh` |
-| **Rust users** (prebuilt) | `cargo binstall llm-cost-dashboard` |
-| **Rust users** (from source) | `cargo install llm-cost-dashboard` |
-| **Anything else** | Download a zip or tarball from [Releases](https://gitlab.com/mattbusel/llm-cost-dashboard/-/releases) |
+**Linux** (x86_64, Ubuntu 20.04+ / Debian 11+). One line, no dependencies, installs to `~/.local/bin`:
 
-Every method installs one program, `llm-dash`. The scripts check the download against the release's `SHA256SUMS.txt` before installing.
-
-<details>
-<summary>Unsigned-binary warnings, and building from source</summary>
-
-The binaries are not code-signed. On Windows, SmartScreen may say "Windows protected your PC": click **More info**, then **Run anyway**. On macOS, if it says the developer cannot be verified, run `xattr -d com.apple.quarantine "$(which llm-dash)"`.
-
-```bash
-git clone https://gitlab.com/mattbusel/llm-cost-dashboard
-cd llm-cost-dashboard
-cargo build --release     # binary at target/release/llm-dash
+```sh
+mkdir -p ~/.local/bin && curl -fsSL https://gitlab.com/mattbusel/llm-cost-dashboard/-/releases/permalink/latest/downloads/llm-dash-linux-x86_64.tar.gz | tar xz --strip-components=1 -C ~/.local/bin --wildcards '*/llm-dash'
 ```
 
-</details>
+| Other systems | |
+|---|---|
+| **Windows** | [Download llm-dash-windows-x86_64.exe](https://gitlab.com/mattbusel/llm-cost-dashboard/-/releases/permalink/latest/downloads/llm-dash-windows-x86_64.exe) and run it. (Unsigned, so SmartScreen may ask: *More info*, then *Run anyway*.) |
+| **macOS, or from source** | `cargo install --locked llm-cost-dashboard` |
+
+The command is `llm-dash`. Every release, with SHA-256 checksums: [Releases](https://gitlab.com/mattbusel/llm-cost-dashboard/-/releases).
 
 ## Use it in 3 steps
 
