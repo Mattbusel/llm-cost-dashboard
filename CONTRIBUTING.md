@@ -15,7 +15,7 @@ opening a pull request.
 ## Building
 
 ```bash
-git clone https://github.com/Mattbusel/llm-cost-dashboard.git
+git clone https://gitlab.com/mattbusel/llm-cost-dashboard.git
 cd llm-cost-dashboard
 cargo build --release
 ```

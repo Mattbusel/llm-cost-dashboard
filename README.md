@@ -12,7 +12,7 @@ Token prices differ by 100x between models, and bills arrive after the fact. `ll
 
 ### Download (no Rust needed)
 
-Grab the file for your system from the [latest release](https://github.com/Mattbusel/llm-cost-dashboard/releases/latest), unzip it, and run `llm-dash` from a terminal:
+Grab the file for your system from the [latest release](https://gitlab.com/mattbusel/llm-cost-dashboard/-/releases), unzip it, and run `llm-dash` from a terminal:
 
 | System | File |
 |---|---|
@@ -34,7 +34,7 @@ cargo install llm-cost-dashboard
 ### From source
 
 ```bash
-git clone https://github.com/Mattbusel/llm-cost-dashboard
+git clone https://gitlab.com/mattbusel/llm-cost-dashboard
 cd llm-cost-dashboard
 cargo build --release     # binary at target/release/llm-dash
 ```
@@ -377,7 +377,7 @@ Webhook delivery needs the default `webhooks` feature; build with `--no-default-
 
 ```toml
 [dependencies]
-llm-cost-dashboard = { git = "https://github.com/Mattbusel/llm-cost-dashboard" }
+llm-cost-dashboard = { git = "https://gitlab.com/mattbusel/llm-cost-dashboard" }
 ```
 
 The crate is `llm_cost_dashboard`. A ledger of priced requests:

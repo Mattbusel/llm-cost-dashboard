@@ -35,9 +35,9 @@
 //!
 //! ## Related Projects
 //!
-//! - [Reddit-Options-Trader-ROT](https://github.com/Mattbusel/Reddit-Options-Trader-ROT-)
-//! - [tokio-prompt-orchestrator](https://github.com/Mattbusel/tokio-prompt-orchestrator)
-//! - [rot-signals-api](https://github.com/Mattbusel/rot-signals-api)
+//! - [Reddit-Options-Trader-ROT](https://gitlab.com/mattbusel/Reddit-Options-Trader-ROT)
+//! - [tokio-prompt-orchestrator](https://gitlab.com/mattbusel/tokio-prompt-orchestrator)
+//! - [rot-signals-api](https://gitlab.com/mattbusel/rot-signals-api)
 
 pub mod alerting;
 pub mod alerts;
