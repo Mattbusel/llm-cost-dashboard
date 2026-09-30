@@ -28,6 +28,8 @@ mkdir -p ~/.local/bin && curl -fsSL https://gitlab.com/mattbusel/llm-cost-dashbo
 
 The command is `llm-dash`. Every release, with SHA-256 checksums: [Releases](https://gitlab.com/mattbusel/llm-cost-dashboard/-/releases).
 
+**In GitLab CI:** price a log of your LLM calls in CI and fail when the projected monthly bill is over budget with the [`llm-spend-check`](https://gitlab.com/explore/catalog/mattbusel/llm-ci) CI/CD component.
+
 ## Use it in 3 steps
 
 **1. Look around with sample data** (no API key, no setup):
