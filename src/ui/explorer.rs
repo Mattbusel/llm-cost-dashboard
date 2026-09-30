@@ -374,7 +374,7 @@ fn render_detail_pane(frame: &mut Frame, area: Rect, record: Option<&CostRecord>
                 ),
             ]),
             Line::from(vec![
-                Span::styled("Request ID:", Theme::dim()),
+                Span::styled("Request:   ", Theme::dim()),
                 Span::styled(r.request_id.clone(), Theme::dim()),
             ]),
         ],

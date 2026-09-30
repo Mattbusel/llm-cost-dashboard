@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>llm-dash: see what your LLM calls cost</title>
+<meta name="description" content="llm-dash is a terminal dashboard that prices every LLM API call from a log file and shows spend, budget, cost per model, forecasts and cost spikes. Free, open source, runs locally.">
+<meta property="og:title" content="llm-dash: see what your LLM calls cost">
+<meta property="og:description" content="A live terminal dashboard for LLM spend. Prices 83 models. Runs locally, no account.">
+<meta property="og:image" content="https://mattbusel.github.io/llm-cost-dashboard/assets/social.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230e1311'/%3E%3Ctext x='16' y='23' font-family='monospace' font-size='20' font-weight='700' text-anchor='middle' fill='%237bd88f'%3E$%3C/text%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#0e1311;--bg2:#121916;--rule:#1b2521;--line:#26332d;--fg:#dfe6e0;--mute:#8e9d95;
+  --green:#7bd88f;--amber:#f0c05a;--red:#ff6a55;--margin:#4a221d;
+  --paper:#f3efe4;--ink:#1e1e1b;--ink-mute:#6f6a5c;--stamp:#c8352a;
+  --display:Bahnschrift,"DIN Alternate","Barlow Condensed","Arial Narrow",sans-serif;
+  --mono:ui-monospace,"Cascadia Mono","SF Mono",Menlo,Consolas,monospace;
+  --sans:Bahnschrift,system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+@media (prefers-color-scheme: light){
+  :root{--bg:#f4f1e8;--bg2:#ebe6d8;--rule:#e2dccb;--line:#d3cbb6;--fg:#1e1e1b;--mute:#6a665a;
+  --green:#1f7a3a;--amber:#94620a;--red:#b3261e;--margin:#e3b3aa}
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.55;
+  background-image:repeating-linear-gradient(180deg,transparent 0 31px,var(--rule) 31px 32px);}
+body::before{content:"";position:fixed;top:0;bottom:0;left:clamp(10px,3vw,40px);width:2px;background:var(--margin);pointer-events:none}
+a{color:var(--green)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+.wrap{max-width:1120px;margin:0 auto;padding:0 clamp(24px,5vw,56px)}
+header.top{display:flex;justify-content:space-between;align-items:center;padding:22px 0}
+.mark{font-family:var(--mono);font-weight:700;color:var(--fg);text-decoration:none}
+.mark b{color:var(--green)}
+nav a{color:var(--mute);text-decoration:none;margin-left:22px;font-size:15px}
+nav a:hover{color:var(--fg)}
+
+.hero{display:grid;grid-template-columns:1.1fr .9fr;gap:48px;align-items:center;padding:36px 0 56px}
+.kicker{font-family:var(--display);font-weight:600;letter-spacing:.24em;text-transform:uppercase;font-size:13px;color:var(--mute)}
+h1{font-family:var(--display);font-weight:700;font-stretch:condensed;font-size:clamp(64px,10vw,120px);line-height:.9;margin:.12em 0 .18em;letter-spacing:-.01em}
+h1 b{color:var(--green)}
+.pitch{font-size:clamp(19px,2.2vw,23px);max-width:34ch;margin:0 0 26px}
+.facts{color:var(--mute);font-size:15px;margin:0 0 26px}
+
+.install{background:var(--bg2);border:1px solid var(--line);border-radius:10px;overflow:hidden;max-width:560px}
+.tabs{display:flex;border-bottom:1px solid var(--line)}
+.tabs button{flex:1;background:none;border:0;color:var(--mute);font:600 14px var(--sans);padding:11px 8px;cursor:pointer;border-bottom:2px solid transparent}
+.tabs button[aria-selected=true]{color:var(--fg);border-bottom-color:var(--green)}
+.panel{display:none;padding:14px}
+.panel.on{display:block}
+.cmd{display:flex;gap:10px;align-items:flex-start}
+.cmd code{flex:1;font:14px/1.5 var(--mono);color:var(--fg);word-break:break-all}
+.cmd code::before{content:"$ ";color:var(--green)}
+.cmd.ps code::before{content:"> "}
+.copy{flex:none;background:none;border:1px solid var(--line);color:var(--mute);border-radius:6px;font:600 12px var(--sans);padding:4px 10px;cursor:pointer}
+.copy:hover{color:var(--fg)}
+.alt{font-size:13px;color:var(--mute);margin:10px 0 0}
+.alt code{font-family:var(--mono);color:var(--fg)}
+
+/* receipt, the project's motif */
+.receipt{justify-self:center;margin-bottom:34px;width:min(100%,360px);transform:rotate(-2.5deg);filter:drop-shadow(0 22px 30px rgba(0,0,0,.35));position:relative}
+.paper{background:var(--paper);color:var(--ink);padding:20px 20px 28px;font:13.5px/1.62 var(--mono);
+  background-image:repeating-linear-gradient(180deg,transparent 0 21px,rgba(0,0,0,.035) 21px 22px);
+  -webkit-mask:linear-gradient(#000 0 0) top/100% calc(100% - 10px) no-repeat,conic-gradient(from -45deg at bottom,#0000,#000 1deg 89deg,#0000 90deg) bottom/16px 10px repeat-x;
+  mask:linear-gradient(#000 0 0) top/100% calc(100% - 10px) no-repeat,conic-gradient(from -45deg at bottom,#0000,#000 1deg 89deg,#0000 90deg) bottom/16px 10px repeat-x}
+.rh{text-align:center;font-weight:700;letter-spacing:.18em}
+.rs{text-align:center;color:var(--ink-mute);font-size:11.5px}
+.dash{border-top:1.5px dashed #9b9483;margin:8px 0}
+.ln{display:flex;gap:8px;white-space:nowrap}
+.ln span:first-child{flex:1;overflow:hidden;text-overflow:clip}
+.ln .t{color:#7b7565}
+.ln .c{width:66px;text-align:right}
+.ln.hot{color:#b3261e;font-weight:700}.ln.hot .t{color:#b3261e}
+.tot{display:flex;justify-content:space-between;font-weight:700;font-size:16px}
+.stamp{position:absolute;right:-14px;bottom:-34px;transform:rotate(6deg);border:3px solid var(--stamp);color:var(--stamp);background:var(--paper);
+  font:700 17px var(--display);letter-spacing:.06em;padding:4px 12px;border-radius:6px;box-shadow:0 8px 18px rgba(0,0,0,.3)}
+.stamp small{display:block;font-size:11px;font-weight:600;letter-spacing:.02em}
+
+section{padding:56px 0;border-top:1px solid var(--line)}
+h2{font-family:var(--display);font-weight:700;font-size:clamp(30px,4vw,42px);line-height:1.05;margin:0 0 10px}
+.lede{color:var(--mute);max-width:62ch;margin:0 0 28px;font-size:17px}
+.term{border-radius:12px;overflow:hidden;border:1px solid var(--line);box-shadow:0 30px 70px rgba(0,0,0,.35);background:#0e1311}
+.term img{display:block;width:100%;height:auto}
+.cap{font-size:13px;color:var(--mute);margin-top:10px}
+
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;counter-reset:s}
+.step{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:18px}
+.step h3{font-family:var(--display);font-size:20px;margin:0 0 6px}
+.step h3::before{counter-increment:s;content:counter(s);display:inline-grid;place-items:center;width:28px;height:28px;margin-right:10px;border-radius:5px;
+  background:#0a0e0c;border:1px solid #26332d;color:#7bd88f;font:700 16px var(--mono)}
+.step p{margin:0 0 10px;color:var(--mute);font-size:15px}
+pre{margin:0;background:#0b100e;color:#dfe6e0;border:1px solid #26332d;border-radius:8px;padding:12px 14px;overflow-x:auto;font:13px/1.55 var(--mono)}
+pre .g{color:#7bd88f}.pre-a{color:#f0c05a}
+
+.panels{display:grid;grid-template-columns:repeat(2,1fr);gap:0 32px}
+.row{display:grid;grid-template-columns:170px 1fr;gap:14px;padding:12px 0;border-bottom:1px dashed var(--line)}
+.row b{font-family:var(--mono);font-size:14px;color:var(--green)}
+.row span{font-size:15px}
+
+.split{display:grid;grid-template-columns:1fr 1fr;gap:32px;align-items:start}
+footer{padding:40px 0 60px;color:var(--mute);font-size:14px;border-top:1px solid var(--line)}
+footer a{color:var(--mute)}
+
+@media (max-width:860px){
+  .hero,.split{grid-template-columns:1fr}
+  .receipt{margin-top:10px}
+  .steps,.panels{grid-template-columns:1fr}
+  nav a:not(:last-child){display:none}
+}
+@media (max-width:420px){
+  .row{grid-template-columns:1fr;gap:2px}
+  .stamp{right:0}
+}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="top">
+  <a class="mark" href="#">llm<b>-</b>dash</a>
+  <nav><a href="#how">How it works</a><a href="#reports">Reports</a><a href="https://github.com/Mattbusel/llm-cost-dashboard">GitHub</a></nav>
+</header>
+
+<div class="hero">
+  <div>
+    <div class="kicker">llm-cost-dashboard</div>
+    <h1>llm<b>-</b>dash</h1>
+    <p class="pitch">See what your AI model calls cost, live in your terminal, before the bill arrives.</p>
+    <p class="facts">Prices 83 models across Anthropic, OpenAI, Google, DeepSeek, Mistral and more. Runs on your machine. No account, no API key, MIT licensed.</p>
+
+    <div class="install" id="install">
+      <div class="tabs" role="tablist" aria-label="Install method">
+        <button role="tab" aria-selected="true" aria-controls="p-win" id="t-win">Windows</button>
+        <button role="tab" aria-selected="false" aria-controls="p-nix" id="t-nix">macOS / Linux</button>
+        <button role="tab" aria-selected="false" aria-controls="p-cargo" id="t-cargo">Rust</button>
+      </div>
+      <div class="panel on" role="tabpanel" id="p-win" aria-labelledby="t-win">
+        <div class="cmd ps"><code>irm https://raw.githubusercontent.com/Mattbusel/llm-cost-dashboard/master/install.ps1 | iex</code><button class="copy">Copy</button></div>
+        <p class="alt">Or with Scoop: <code>scoop bucket add mattbusel https://github.com/Mattbusel/scoop-bucket</code>, then <code>scoop install llm-dash</code></p>
+      </div>
+      <div class="panel" role="tabpanel" id="p-nix" aria-labelledby="t-nix">
+        <div class="cmd"><code>brew install mattbusel/tap/llm-dash</code><button class="copy">Copy</button></div>
+        <p class="alt">No Homebrew? <code>curl -fsSL https://raw.githubusercontent.com/Mattbusel/llm-cost-dashboard/master/install.sh | sh</code></p>
+      </div>
+      <div class="panel" role="tabpanel" id="p-cargo" aria-labelledby="t-cargo">
+        <div class="cmd"><code>cargo binstall llm-cost-dashboard</code><button class="copy">Copy</button></div>
+        <p class="alt">Build from source instead: <code>cargo install llm-cost-dashboard</code></p>
+      </div>
+    </div>
+    <p class="alt">Then run <code>llm-dash --demo</code> to look around with sample data.</p>
+  </div>
+
+  <div class="receipt" aria-label="Receipt of the last nine requests from the recorded run, total $0.5845 for 70 requests">
+    <div class="paper">
+      <div class="rh">LLM SPEND</div>
+      <div class="rs">priced by llm-dash from 83 models</div>
+      <div class="dash"></div>
+      <div class="ln"><span>gemini-2.0-flash</span><span class="t">426/157</span><span class="c">$0.0001</span></div>
+      <div class="ln"><span>claude-haiku-4-5</span><span class="t">181/113</span><span class="c">$0.0002</span></div>
+      <div class="ln"><span>gpt-4o-mini</span><span class="t">699/116</span><span class="c">$0.0002</span></div>
+      <div class="ln"><span>gpt-4o</span><span class="t">936/348</span><span class="c">$0.0099</span></div>
+      <div class="ln"><span>claude-sonnet-4-6</span><span class="t">720/492</span><span class="c">$0.0095</span></div>
+      <div class="ln"><span>gpt-4o</span><span class="t">1,498/292</span><span class="c">$0.0119</span></div>
+      <div class="ln hot"><span>gpt-4o</span><span class="t">60,000/2,500</span><span class="c">$0.3375</span></div>
+      <div class="ln"><span>gpt-4o</span><span class="t">1,454/296</span><span class="c">$0.0117</span></div>
+      <div class="ln"><span>claude-sonnet-4-6</span><span class="t">1,329/232</span><span class="c">$0.0075</span></div>
+      <div class="dash"></div>
+      <div class="tot"><span>TOTAL, 70 REQ</span><span>$0.5845</span></div>
+    </div>
+    <div class="stamp">ANOMALY 26.7x<small>gpt-4o, 60,000 tokens in</small></div>
+  </div>
+</div>
+</div>
+
+<section id="watch"><div class="wrap">
+  <h2>Watch the spend move</h2>
+  <p class="lede">Point it at a log your app writes to. Every new line is priced the moment it lands: the budget gauge fills, the per-model bars grow, and a call that costs far more than usual gets flagged.</p>
+  <div class="term"><img src="assets/dashboard.gif" width="1000" height="772" alt="llm-dash tailing a request log: new requests stream in, a 60,000-token gpt-4o call is flagged as a 26.7x cost anomaly, then the cost explorer sorts by price and opens that call" loading="lazy"></div>
+</div></section>
+
+<section id="how"><div class="wrap">
+  <h2>Three steps</h2>
+  <p class="lede">No SDK and no proxy. llm-dash reads a plain text file with one line per model call.</p>
+  <div class="steps">
+    <div class="step"><h3>Look around</h3><p>Sample Claude, GPT and Gemini traffic, no setup.</p><pre><span class="g">$</span> llm-dash --demo</pre></div>
+    <div class="step"><h3>Log your calls</h3><p>Have your app append one JSON line per call.</p><pre>{"model":"gpt-4o-mini",
+ "input_tokens":512,
+ "output_tokens":256,
+ "latency_ms":340}</pre></div>
+    <div class="step"><h3>Watch it live</h3><p>Set a monthly budget and keep it open.</p><pre><span class="g">$</span> llm-dash \
+  --log-file requests.ndjson \
+  --budget 50</pre></div>
+  </div>
+</div></section>
+
+<section id="panels"><div class="wrap">
+  <h2>What each panel tells you</h2>
+  <p class="lede">Everything fits on one screen and refreshes four times a second. Colors follow your terminal theme, and <code>NO_COLOR</code> turns them off.</p>
+  <div class="panels">
+    <div class="row"><b>Summary</b><span>What you have spent, and what a month costs at the last hour's pace.</span></div>
+    <div class="row"><b>Budget</b><span>Spend against your budget. Yellow at 80%, red past 100%.</span></div>
+    <div class="row"><b>Forecast</b><span>Per-day and month-end spend from the trend across all your data.</span></div>
+    <div class="row"><b>Savings</b><span>Cheaper models for your traffic, with the monthly saving.</span></div>
+    <div class="row"><b>Cost by Model</b><span>One bar per model, with its total.</span></div>
+    <div class="row"><b>Cost Anomalies</b><span>Calls that cost 2x or more their model's running average.</span></div>
+    <div class="row"><b>Last 7 days</b><span>Spend per day, today highlighted.</span></div>
+    <div class="row"><b>Explorer</b><span>Press <code>x</code>: sort every call by cost and open one to see its exact price.</span></div>
+  </div>
+</div></section>
+
+<section id="explorer"><div class="wrap split">
+  <div>
+    <h2>Find the call that cost you</h2>
+    <p class="lede">The explorer sorts every request by cost. The runaway prompt from the recording sits on top: 60,000 input tokens on gpt-4o, $0.30 of input and $0.0375 of output, 7.4 seconds.</p>
+  </div>
+  <div class="term"><img src="assets/explorer.png" width="1124" height="868" alt="Cost explorer sorted by cost, with the detail pane of the most expensive gpt-4o call open" loading="lazy"></div>
+</div></section>
+
+<section id="reports"><div class="wrap">
+  <h2>One-shot reports</h2>
+  <p class="lede">The same data answers questions from the command line and exits. This is real output from llm-dash 1.2.2 on its built-in demo data.</p>
+  <div class="split">
+<pre><span class="g">$</span> llm-dash --demo --compare
+Multi-Provider Cost Comparison
+(83 models, 22/day requests, 730in/348out avg tokens)
+
+  Model                     Monthly USD
+  ministral-3b-2410              0.0285
+  llama-3.1-8b-instant           0.0425
+  amazon.nova-micro-v1:0         0.0490
+  gemini-1.5-flash-8b            0.0525
+  ... 79 more rows ...
+<span class="pre-a">Cheapest: ministral-3b-2410 ($0.0285/mo)
+Most expensive: gpt-4.5-preview ($70.5870/mo)
+Spread: 2480x</span></pre>
+<pre><span class="g">$</span> llm-dash --demo --budget 50 --forecast
+Holt-Winters Cost Forecast (based on 20 records)
+
+  Next hour:  $0.005665
+  Next day:   $0.1785
+  Next week:  $3.13
+  Next month: $44.33
+
+  80% CI (next hour): [$0.000000, $0.013657]
+
+<span class="pre-a">  WARNING: forecasted monthly spend ($44.33)
+  exceeds 80% of budget ($50.00)!</span></pre>
+  </div>
+  <p class="cap">The compare table is trimmed to its model and monthly columns here; the full output also lists daily cost, cost per 1,000 requests and provider.</p>
+</div></section>
+
+<footer><div class="wrap">
+  llm-dash is free and open source (MIT). Prices come from a static table in the source; check them against your provider.
+  <br><a href="https://github.com/Mattbusel/llm-cost-dashboard">Source on GitHub</a> ·
+  <a href="https://crates.io/crates/llm-cost-dashboard">crates.io</a> ·
+  <a href="https://docs.rs/llm-cost-dashboard">Library docs</a> ·
+  <a href="https://github.com/Mattbusel/llm-cost-dashboard/releases/latest">Downloads</a>
+</div></footer>
+
+<script>
+const tabs=[...document.querySelectorAll('[role=tab]')];
+function pick(t){tabs.forEach(b=>{const on=b===t;b.setAttribute('aria-selected',on);b.tabIndex=on?0:-1;document.getElementById(b.getAttribute('aria-controls')).classList.toggle('on',on)})}
+tabs.forEach((t,i)=>{t.addEventListener('click',()=>pick(t));t.addEventListener('keydown',e=>{if(e.key==='ArrowRight'||e.key==='ArrowLeft'){const n=tabs[(i+(e.key==='ArrowRight'?1:tabs.length-1))%tabs.length];pick(n);n.focus()}})});
+const ua=navigator.userAgent;if(/Mac|Linux|X11/.test(ua)&&!/Windows/.test(ua))pick(tabs[1]);
+document.querySelectorAll('.copy').forEach(b=>b.addEventListener('click',async()=>{const txt=b.previousElementSibling.textContent;try{await navigator.clipboard.writeText(txt);b.textContent='Copied'}catch(e){b.textContent='Select it'}setTimeout(()=>b.textContent='Copy',1600)}));
+</script>
+</body>
+</html>

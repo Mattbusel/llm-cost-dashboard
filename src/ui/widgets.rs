@@ -17,13 +17,16 @@ use crate::ui::theme::Theme;
 /// Render the budget gauge panel.
 pub fn render_budget(frame: &mut Frame, area: Rect, budget: &BudgetEnvelope) {
     let pct = budget.pct_consumed();
-    let style = Theme::budget_style(pct);
+    let mut style = Theme::budget_style(pct);
+    if crate::ui::theme::no_color() {
+        style = style.add_modifier(ratatui::style::Modifier::REVERSED);
+    }
     let label = format!(
-        "${:.4} / ${:.2} ({}) — ${:.4} remaining",
+        "${:.2} of ${:.2}  {:.0}%  {}",
         budget.spent_usd,
         budget.limit_usd,
+        pct * 100.0,
         budget.status(),
-        budget.remaining(),
     );
     let gauge = Gauge::default()
         .block(
@@ -56,15 +59,15 @@ pub fn render_sparkline(frame: &mut Frame, area: Rect, data: &[u64]) {
 pub fn render_summary(frame: &mut Frame, area: Rect, total: f64, monthly: f64, count: usize) {
     let lines = vec![
         Line::from(vec![
-            Span::styled("Total spend:  ", Theme::dim()),
-            Span::styled(format!("${total:.6}"), Theme::ok()),
+            Span::styled("Spent so far:   ", Theme::dim()),
+            Span::styled(format!("${total:.4}"), Theme::ok()),
         ]),
         Line::from(vec![
-            Span::styled("Projected/mo: ", Theme::dim()),
-            Span::styled(format!("${monthly:.4}"), Theme::warn()),
+            Span::styled("Month, 1h pace: ", Theme::dim()),
+            Span::styled(format!("${monthly:.2}/mo"), Theme::warn()),
         ]),
         Line::from(vec![
-            Span::styled("Requests:     ", Theme::dim()),
+            Span::styled("Requests:       ", Theme::dim()),
             Span::styled(format!("{count}"), Theme::normal()),
         ]),
     ];

@@ -7,6 +7,47 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-09-26
+
+### Changed
+
+- Summary says what its monthly figure means ("At last hour's pace"), and the
+  Forecast panel labels its trend-based numbers, so the two projections no
+  longer look like conflicting answers.
+- Forecast falls back to the last hour's pace, and says so, until the log
+  spans enough time for a trend (it used to show only "--").
+- The 7-day trend is now seven labelled bars (day and dollar amount) across
+  the full width, with today highlighted.
+- Empty panels shrink to one line: Prompt Cache (was Cache Breakdown) when
+  the log has no cached tokens, Cost Anomalies when there are none.
+- Release binaries for Linux ARM64 (`aarch64-unknown-linux-gnu`);
+  `install.sh`, Homebrew and cargo-binstall pick them up.
+- GitHub Actions moved off the deprecated Node 20 versions.
+- README: the demo GIF opens on the full dashboard and runs about 14 seconds.
+
+## [1.2.1] - 2026-09-25
+
+### Fixed
+
+- Log lines no longer draw over the dashboard: without `RUST_LOG`, the TUI
+  logs nothing and the one-shot reports log warnings only (was `info`).
+- An empty ledger showed `$-0.0000`; it now shows `$0.0000`.
+- The footer suggested piping JSON into `llm-dash`, which it does not read;
+  it now lists the keys and the `--log-file` usage.
+- Cost by Model labels were cut to three characters; the chart is now
+  horizontal with full model names and dollar amounts.
+
+### Changed
+
+- Dashboard: title bar shows request count, spend and budget; empty state
+  explains how to load data; left-column panels no longer clip their lines;
+  savings suggestions fit the column; body text uses the terminal's default
+  colour so light themes stay readable; `NO_COLOR` is respected.
+- `--help` has a plain description, examples and the log line format.
+- Install: `install.sh`, `install.ps1`, cargo-binstall metadata, Homebrew and
+  Scoop packages, winget manifests in `packaging/winget/`.
+- README: banner, recorded demo GIF, install table, 3-step guide, real output.
+
 ## [1.2.0] - 2026-09-25
 
 ### Added

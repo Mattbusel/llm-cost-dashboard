@@ -38,10 +38,12 @@ jobs:
             target: aarch64-apple-darwin
           - os: macos-latest
             target: x86_64-apple-darwin
+          - os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
           - os: windows-latest
             target: x86_64-pc-windows-msvc
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ github.event_name == 'pull_request' && github.sha || env.TAG }}
 
@@ -85,7 +87,7 @@ jobs:
           "$bin" --version
           "$bin" --demo --compare > /dev/null
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.target }}
           path: |
@@ -98,7 +100,7 @@ jobs:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           path: dist
           merge-multiple: true
@@ -123,6 +125,7 @@ jobs:
           - macOS Apple Silicon: \`llm-cost-dashboard-$TAG-aarch64-apple-darwin.tar.gz\`
           - macOS Intel: \`llm-cost-dashboard-$TAG-x86_64-apple-darwin.tar.gz\`
           - Linux x86_64: \`llm-cost-dashboard-$TAG-x86_64-unknown-linux-gnu.tar.gz\`
+          - Linux ARM64: \`llm-cost-dashboard-$TAG-aarch64-unknown-linux-gnu.tar.gz\`
 
           The binaries are unsigned. Windows SmartScreen may warn about an unknown publisher (More info, then Run anyway); on macOS right-click the binary and choose Open.
           Checksums are in \`SHA256SUMS.txt\`. See CHANGELOG.md for what changed.

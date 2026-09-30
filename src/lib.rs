@@ -1,11 +1,43 @@
 #![deny(missing_docs)]
 //! # llm-cost-dashboard
 //!
-//! Real-time terminal dashboard for LLM token spend.
+//! Price your LLM API calls and total them up: the library behind the
+//! `llm-dash` terminal dashboard.
 //!
-//! This crate provides the library components consumed by the `llm-dash`
-//! binary.  It can also be used as a library to embed cost tracking in other
-//! Rust applications.
+//! ![llm-dash dashboard](https://raw.githubusercontent.com/Mattbusel/llm-cost-dashboard/master/assets/dashboard.gif)
+//!
+//! Want the dashboard itself? Install the binary with
+//! `cargo install llm-cost-dashboard` (or see the
+//! [README](https://github.com/Mattbusel/llm-cost-dashboard#install) for
+//! Homebrew, Scoop and one-line installers) and run `llm-dash --demo`.
+//!
+//! ## Quick example
+//!
+//! ```
+//! use llm_cost_dashboard::{CostLedger, CostRecord};
+//!
+//! let mut ledger = CostLedger::new();
+//! // model, provider, input tokens, output tokens, latency in ms
+//! ledger.add(CostRecord::new("gpt-4o-mini", "openai", 512, 256, 34))?;
+//! ledger.add(CostRecord::new("claude-sonnet-4-6", "anthropic", 1200, 400, 900))?;
+//!
+//! assert_eq!(ledger.len(), 2);
+//! println!("spent ${:.6}", ledger.total_usd());
+//! for (model, stats) in ledger.by_model() {
+//!     println!("{model}: ${:.6} over {} requests", stats.total_cost_usd, stats.request_count);
+//! }
+//! # Ok::<(), llm_cost_dashboard::DashboardError>(())
+//! ```
+//!
+//! ## Where to start
+//!
+//! - [`CostRecord`] and [`CostLedger`]: one priced request, and the running ledger.
+//! - [`cost::pricing::compute_cost`]: the price of a call from the built-in table of 83 models.
+//! - [`ProviderComparison`]: rank every priced model by monthly cost for a workload.
+//! - [`SpendForecaster`] and [`CostForecaster`]: project spend from what you have so far.
+//! - [`AnomalyDetector`]: flag cost spikes with a rolling Z-score.
+//! - [`OrgTree`]: org, team and project budgets with alerts.
+//! - [`ui::App`]: the ratatui dashboard state, if you want to embed the TUI.
 //!
 //! ## Modules
 //!

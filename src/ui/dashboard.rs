@@ -8,7 +8,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::Modifier,
     text::{Line, Span},
-    widgets::{BarChart, Block, Borders, Cell, Paragraph, Row, Sparkline, Table},
+    widgets::{BarChart, Block, Borders, Cell, Paragraph, Row, Table},
     Frame,
 };
 
@@ -18,7 +18,7 @@ use crate::forecast::{ForecastResult, SpendForecaster, Trend};
 use crate::recommendations::ModelRecommender;
 use crate::ui::{theme::Theme, widgets};
 
-/// Full dashboard rendering — called on every tick.
+/// Full dashboard rendering, called on every tick.
 ///
 /// # Parameters
 ///
@@ -37,20 +37,40 @@ pub fn render(
 ) {
     let area = frame.area();
 
+    // Panels with nothing to show shrink to a single line so the requests
+    // table gets the room.
+    let anomaly_h = if anomalies.is_empty() {
+        3
+    } else {
+        2 + anomalies.len().min(4) as u16
+    };
+    let has_cache = ledger
+        .records()
+        .iter()
+        .any(|r| r.cache.cache_read_tokens > 0 || r.cache.cache_write_tokens > 0);
+
+    // On short terminals the history panels give way to the core panels.
+    let (trend_h, spark_h) = match area.height {
+        36.. => (6, 3),
+        32..=35 => (6, 0),
+        28..=31 => (4, 0),
+        _ => (0, 0),
+    };
+
     // Outer layout: title bar + main + anomalies + trend + sparkline + help bar
     let outer = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // title bar
-            Constraint::Min(10),   // main content
-            Constraint::Length(5), // anomaly panel (shown when anomalies exist)
-            Constraint::Length(5), // 7-day trend panel
-            Constraint::Length(3), // per-request sparkline
-            Constraint::Length(1), // help bar
+            Constraint::Length(1),         // title bar
+            Constraint::Min(10),           // main content
+            Constraint::Length(anomaly_h), // cost anomalies
+            Constraint::Length(trend_h),   // 7-day trend
+            Constraint::Length(spark_h),   // per-request sparkline
+            Constraint::Length(1),         // help bar
         ])
         .split(area);
 
-    render_title(frame, outer[0], export_status, current_session);
+    render_title(frame, outer[0], ledger, budget, export_status, current_session);
 
     // Main content: left col + right col
     let main = Layout::default()
@@ -62,11 +82,11 @@ pub fn render(
     let left = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage(20),
-            Constraint::Percentage(20),
-            Constraint::Percentage(20),
-            Constraint::Percentage(20),
-            Constraint::Percentage(20),
+            Constraint::Length(5), // summary: 3 lines
+            Constraint::Length(3), // budget gauge
+            Constraint::Length(5), // forecast: 3 lines
+            Constraint::Length(if has_cache { 6 } else { 3 }), // cache
+            Constraint::Min(3),    // savings: whatever is left
         ])
         .split(main[0]);
 
@@ -75,7 +95,7 @@ pub fn render(
     widgets::render_summary(frame, left[0], total, monthly, ledger.len());
     widgets::render_budget(frame, left[1], budget);
     render_forecast(frame, left[2], ledger);
-    render_cache_breakdown(frame, left[3], ledger);
+    render_cache_breakdown(frame, left[3], ledger, has_cache);
     render_savings_opportunities(frame, left[4], ledger);
 
     // Right col: model bar chart (top) + recent requests table (bottom)
@@ -85,17 +105,22 @@ pub fn render(
         .split(main[1]);
 
     render_model_chart(frame, right[0], ledger);
-    render_requests_table(frame, right[1], ledger, scroll_offset);
+    if ledger.is_empty() {
+        render_empty_state(frame, right[1]);
+    } else {
+        render_requests_table(frame, right[1], ledger, scroll_offset);
+    }
 
     // Anomaly panel
     render_anomalies(frame, outer[2], anomalies);
 
-    // 7-day trend panel
-    render_trend(frame, outer[3], ledger);
-
-    // Per-request sparkline
-    let spark_data = ledger.sparkline_data(60);
-    widgets::render_sparkline(frame, outer[4], &spark_data);
+    if trend_h > 0 {
+        render_trend(frame, outer[3], ledger);
+    }
+    if spark_h > 0 {
+        let spark_data = ledger.sparkline_data(60);
+        widgets::render_sparkline(frame, outer[4], &spark_data);
+    }
 
     render_help(frame, outer[5]);
 }
@@ -103,27 +128,79 @@ pub fn render(
 fn render_title(
     frame: &mut Frame,
     area: ratatui::layout::Rect,
+    ledger: &CostLedger,
+    budget: &BudgetEnvelope,
     export_status: Option<&str>,
     current_session: Option<&str>,
 ) {
     let mut spans = vec![
-        Span::styled(" LLM Cost Dashboard", Theme::title()),
+        Span::styled(" llm-dash ", Theme::title()),
+        Span::styled(" LLM spend, live", Theme::dim()),
         Span::styled(
-            "  [q: quit | r: reset | d: demo | e: export | x: explorer | j/k: scroll]",
-            Theme::dim(),
+            format!(
+                "   {} requests   ${:.4} spent   ${:.2} budget",
+                ledger.len(),
+                ledger.total_usd(),
+                budget.limit_usd
+            ),
+            Theme::normal(),
         ),
     ];
     if let Some(session) = current_session {
-        spans.push(Span::styled(
-            format!("  [session: {session}]"),
-            Theme::warn(),
-        ));
+        spans.push(Span::styled(format!("   session: {session}"), Theme::warn()));
     }
     if let Some(status) = export_status {
-        spans.push(Span::styled(format!("  Exported: {status}"), Theme::ok()));
+        spans.push(Span::styled(format!("   Exported: {status}"), Theme::ok()));
     }
     let title = Paragraph::new(Line::from(spans));
     frame.render_widget(title, area);
+}
+
+/// Shown in place of the requests table before any request has been loaded.
+fn render_empty_state(frame: &mut Frame, area: ratatui::layout::Rect) {
+    let key = |k: &'static str| Span::styled(k, Theme::header());
+    let lines = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            "  No requests yet.",
+            Theme::normal().add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  Press ", Theme::dim()),
+            key("d"),
+            Span::styled(" to load demo data and look around.", Theme::dim()),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  To watch your own traffic, quit and run:",
+            Theme::dim(),
+        )),
+        Line::from(Span::styled(
+            "    llm-dash --log-file requests.ndjson --budget 50",
+            Theme::ok(),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  One JSON object per line, for example:",
+            Theme::dim(),
+        )),
+        Line::from(Span::styled(
+            "    {\"model\":\"gpt-4o-mini\",\"input_tokens\":512,\"output_tokens\":256,\"latency_ms\":340}",
+            Theme::normal(),
+        )),
+        Line::from(Span::styled(
+            "  Lines your app appends while the dashboard is open show up live.",
+            Theme::dim(),
+        )),
+    ];
+    let paragraph = Paragraph::new(lines).block(
+        Block::default()
+            .title(" Recent Requests ")
+            .borders(Borders::ALL)
+            .border_style(Theme::border()),
+    );
+    frame.render_widget(paragraph, area);
 }
 
 /// Render a compact API key validation status line in the header area.
@@ -151,42 +228,84 @@ pub fn render_validation_status(
 }
 
 fn render_help(frame: &mut Frame, area: ratatui::layout::Rect) {
-    let help = Paragraph::new(Line::from(Span::styled(
-        " Pipe data: echo '{\"model\":\"claude-sonnet-4-6\",\"input_tokens\":512,\"output_tokens\":256,\"latency_ms\":340}' | llm-dash",
+    let mut spans = Vec::new();
+    for (k, what) in [
+        ("q", "quit"),
+        ("d", "demo data"),
+        ("r", "reset"),
+        ("e", "export"),
+        ("x", "explorer"),
+        ("j/k", "scroll"),
+    ] {
+        spans.push(Span::styled(format!(" {k} "), Theme::header()));
+        spans.push(Span::styled(format!("{what}  "), Theme::dim()));
+    }
+    spans.push(Span::styled(
+        "  your data: llm-dash --log-file requests.ndjson",
         Theme::dim(),
-    )));
-    frame.render_widget(help, area);
+    ));
+    frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
 fn render_model_chart(frame: &mut Frame, area: ratatui::layout::Rect, ledger: &CostLedger) {
-    let by_model = ledger.by_model();
-    // We need owned strings so we collect and format
-    let model_data: Vec<(String, u64)> = {
-        let mut v: Vec<_> = by_model
-            .values()
-            .map(|s| {
-                let label = s.model.chars().take(16).collect::<String>();
-                let val = (s.total_cost_usd * 1_000_000.0) as u64;
-                (label, val)
-            })
-            .collect();
-        v.sort_by_key(|x| std::cmp::Reverse(x.1));
-        v.truncate(8);
-        v
-    };
-    let bar_data: Vec<(&str, u64)> = model_data.iter().map(|(s, v)| (s.as_str(), *v)).collect();
+    use ratatui::widgets::{Bar, BarGroup};
+
+    let block = Block::default()
+        .title(" Cost by Model ")
+        .borders(Borders::ALL)
+        .border_style(Theme::border());
+
+    let mut rows: Vec<(String, f64)> = ledger
+        .by_model()
+        .values()
+        .map(|s| (s.model.clone(), s.total_cost_usd))
+        .collect();
+    rows.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    // One bar per text row inside the border.
+    rows.truncate(area.height.saturating_sub(2).max(1) as usize);
+
+    if rows.is_empty() {
+        let empty = Paragraph::new(Line::from(Span::styled(
+            " One bar per model appears here as requests come in.",
+            Theme::dim(),
+        )))
+        .block(block);
+        frame.render_widget(empty, area);
+        return;
+    }
+
+    let label_w = rows
+        .iter()
+        .map(|(m, _)| m.chars().count())
+        .max()
+        .unwrap_or(0)
+        .min(24);
+    let bars: Vec<Bar> = rows
+        .iter()
+        .map(|(model, usd)| {
+            let label: String = model.chars().take(label_w).collect();
+            Bar::default()
+                // micro-dollars keep small costs visible as integer bar lengths
+                .value((usd * 1_000_000.0).round() as u64)
+                .label(Line::from(vec![
+                    Span::styled(format!("{label:<label_w$} "), Theme::normal()),
+                    Span::styled(
+                        format!("{:>9} ", format!("${usd:.4}")),
+                        Theme::normal().add_modifier(Modifier::BOLD),
+                    ),
+                ]))
+                .text_value(String::new())
+                .style(Theme::ok())
+        })
+        .collect();
+
     let chart = BarChart::default()
-        .block(
-            Block::default()
-                .title(" Cost by Model (μUSD) ")
-                .borders(Borders::ALL)
-                .border_style(Theme::border()),
-        )
-        .data(&bar_data)
-        .bar_width(3)
-        .bar_gap(1)
-        .bar_style(Theme::ok())
-        .value_style(Theme::header());
+        .block(block)
+        .direction(Direction::Horizontal)
+        .data(BarGroup::default().bars(&bars))
+        .bar_width(1)
+        .bar_gap(0)
+        .label_style(Theme::normal());
     frame.render_widget(chart, area);
 }
 
@@ -260,7 +379,7 @@ fn render_anomalies(frame: &mut Frame, area: ratatui::layout::Rect, anomalies: &
 
     let lines: Vec<Line> = if anomalies.is_empty() {
         vec![Line::from(Span::styled(
-            "  No anomalies detected",
+            "  None yet. A request is flagged when it costs 2x or more its model's running average.",
             Theme::dim(),
         ))]
     } else {
@@ -316,7 +435,7 @@ fn render_anomalies(frame: &mut Frame, area: ratatui::layout::Rect, anomalies: &
 
 /// Render the cost forecast widget showing projected daily/monthly spend and trend.
 fn render_forecast(frame: &mut Frame, area: ratatui::layout::Rect, ledger: &CostLedger) {
-    // Build a SpendForecaster from all records (cumulative cost over time).
+    // Fit a line through cumulative spend over time.
     let mut forecaster = SpendForecaster::new();
     let mut cumulative = 0.0f64;
     for record in ledger.records() {
@@ -327,37 +446,49 @@ fn render_forecast(frame: &mut Frame, area: ratatui::layout::Rect, ledger: &Cost
 
     let lines = if let Some(ref fc) = fc {
         let (trend_char, trend_style) = match fc.trend {
-            Trend::Accelerating => ("↑", Theme::warn()),
-            Trend::Stable => ("→", Theme::normal()),
-            Trend::Decelerating => ("↓", Theme::ok()),
+            Trend::Accelerating => ("rising", Theme::warn()),
+            Trend::Stable => ("steady", Theme::normal()),
+            Trend::Decelerating => ("falling", Theme::ok()),
         };
         vec![
             Line::from(vec![
-                Span::styled("Proj/day:  ", Theme::dim()),
-                Span::styled(format!("${:.6}", fc.projected_daily_usd), Theme::ok()),
-                Span::raw("  "),
+                Span::styled("Per day:     ", Theme::dim()),
+                Span::styled(format!("${:.4}", fc.projected_daily_usd), Theme::ok()),
+                Span::raw(" "),
                 Span::styled(trend_char, trend_style),
             ]),
             Line::from(vec![
-                Span::styled("Proj/mo:   ", Theme::dim()),
-                Span::styled(
-                    format!("${:.4}", fc.projected_month_end_usd),
-                    Theme::warn(),
-                ),
+                Span::styled("Month-end:   ", Theme::dim()),
+                Span::styled(format!("${:.2}", fc.projected_month_end_usd), Theme::warn()),
             ]),
-            Line::from(vec![
-                Span::styled("Confidence:", Theme::dim()),
-                Span::styled(
-                    format!(" {:.0}%", fc.confidence * 100.0),
-                    Theme::normal(),
-                ),
-            ]),
+            Line::from(Span::styled(
+                format!("trend over all data, fit {:.0}%", fc.confidence * 100.0),
+                Theme::dim(),
+            )),
+        ]
+    } else if ledger.is_empty() {
+        vec![
+            Line::from(Span::styled("Per day:     --", Theme::dim())),
+            Line::from(Span::styled("Month-end:   --", Theme::dim())),
+            Line::from(Span::styled("waiting for requests", Theme::dim())),
         ]
     } else {
+        // Not enough time spread for a trend yet: fall back to the rate of
+        // the last hour, and say so.
+        let monthly = ledger.projected_monthly_usd(1);
         vec![
-            Line::from(Span::styled("Proj/day:  --", Theme::dim())),
-            Line::from(Span::styled("Proj/mo:   --", Theme::dim())),
-            Line::from(Span::styled("(need ≥2 records)", Theme::dim())),
+            Line::from(vec![
+                Span::styled("Per day:     ", Theme::dim()),
+                Span::styled(format!("${:.4}", monthly / 30.0), Theme::ok()),
+            ]),
+            Line::from(vec![
+                Span::styled("Month:       ", Theme::dim()),
+                Span::styled(format!("${monthly:.2}"), Theme::warn()),
+            ]),
+            Line::from(Span::styled(
+                "at last hour's rate; trend soon",
+                Theme::dim(),
+            )),
         ]
     };
 
@@ -372,41 +503,79 @@ fn render_forecast(frame: &mut Frame, area: ratatui::layout::Rect, ledger: &Cost
 
 /// Render the 7-day historical spend trend as a sparkline.
 fn render_trend(frame: &mut Frame, area: ratatui::layout::Rect, ledger: &CostLedger) {
+    use ratatui::widgets::{Bar, BarGroup};
+
     let trend = ledger.seven_day_trend();
-    // Scale to integer micro-USD for the Sparkline widget
-    let data: Vec<u64> = trend
+    let today = chrono::Utc::now().date_naive();
+    let week_total: f64 = trend.iter().sum::<f64>() + 0.0;
+
+    let block = Block::default()
+        .title(format!(" Last 7 days  ${week_total:.4} "))
+        .borders(Borders::ALL)
+        .border_style(Theme::border());
+    let inner_w = area.width.saturating_sub(2);
+    // Seven bars share the width, one column of space between them.
+    let bar_w = (inner_w.saturating_sub(6) / 7).max(1);
+
+    let bars: Vec<Bar> = trend
         .iter()
-        .map(|&v| (v * 1_000_000.0) as u64)
+        .enumerate()
+        .map(|(i, &usd)| {
+            let day = today - chrono::Duration::days(6 - i as i64);
+            let label = if i == 6 {
+                "today".to_string()
+            } else {
+                day.format("%a %d").to_string()
+            };
+            let style = if i == 6 { Theme::warn() } else { Theme::ok() };
+            Bar::default()
+                .value((usd * 1_000_000.0).round() as u64)
+                .label(Line::from(label))
+                .text_value(if usd > 0.0 {
+                    format!("${usd:.4}")
+                } else {
+                    String::new()
+                })
+                .style(style)
+                .value_style(Theme::highlight().add_modifier(Modifier::BOLD))
+        })
         .collect();
 
-    // Build a label showing today's date and the span
-    let today = chrono::Utc::now().date_naive();
-    let start = today - chrono::Duration::days(6);
-    let title = format!(
-        " 7-Day Spend Trend ({} → {}) ",
-        start.format("%b %d"),
-        today.format("%b %d"),
-    );
-
-    let sparkline = Sparkline::default()
-        .block(
-            Block::default()
-                .title(title)
-                .borders(Borders::ALL)
-                .border_style(Theme::border()),
-        )
-        .data(&data)
-        .style(Theme::warn());
-    frame.render_widget(sparkline, area);
+    let chart = BarChart::default()
+        .block(block)
+        .data(BarGroup::default().bars(&bars))
+        .bar_width(bar_w)
+        .bar_gap(1)
+        .label_style(Theme::dim());
+    frame.render_widget(chart, area);
 }
 
 /// Render a cache hit/miss cost breakdown panel.
-fn render_cache_breakdown(frame: &mut Frame, area: ratatui::layout::Rect, ledger: &CostLedger) {
+fn render_cache_breakdown(
+    frame: &mut Frame,
+    area: ratatui::layout::Rect,
+    ledger: &CostLedger,
+    has_cache: bool,
+) {
+    if !has_cache {
+        let paragraph = Paragraph::new(Line::from(Span::styled(
+            "no cached tokens in this log",
+            Theme::dim(),
+        )))
+        .block(
+            Block::default()
+                .title(" Prompt Cache ")
+                .borders(Borders::ALL)
+                .border_style(Theme::border()),
+        );
+        frame.render_widget(paragraph, area);
+        return;
+    }
     let records = ledger.records();
     let total_cache_read: u64 = records.iter().map(|r| r.cache.cache_read_tokens).sum();
     let total_cache_write: u64 = records.iter().map(|r| r.cache.cache_write_tokens).sum();
-    let cache_read_cost: f64 = records.iter().map(|r| r.cache.cache_read_cost_usd).sum();
-    let cache_write_cost: f64 = records.iter().map(|r| r.cache.cache_write_cost_usd).sum();
+    let cache_read_cost: f64 = records.iter().map(|r| r.cache.cache_read_cost_usd).sum::<f64>() + 0.0;
+    let cache_write_cost: f64 = records.iter().map(|r| r.cache.cache_write_cost_usd).sum::<f64>() + 0.0;
 
     let lines = vec![
         Line::from(vec![
@@ -434,7 +603,7 @@ fn render_cache_breakdown(frame: &mut Frame, area: ratatui::layout::Rect, ledger
     ];
     let paragraph = Paragraph::new(lines).block(
         Block::default()
-            .title(" Cache Breakdown ")
+            .title(" Prompt Cache ")
             .borders(Borders::ALL)
             .border_style(Theme::border()),
     );
@@ -457,17 +626,25 @@ fn render_savings_opportunities(
         ))]
     } else {
         // Show top 3 suggestions.
+        // Two lines per suggestion so it fits the narrow left column.
         suggestions
             .iter()
             .take(3)
-            .map(|s| {
-                Line::from(vec![
-                    Span::styled(
-                        format!("{:.0}% ", s.saving_pct),
+            .flat_map(|s| {
+                [
+                    Line::from(vec![
+                        Span::styled(s.current_model.clone(), Theme::normal()),
+                        Span::styled(" -> ", Theme::dim()),
+                        Span::styled(s.suggested_model.clone(), Theme::ok()),
+                    ]),
+                    Line::from(Span::styled(
+                        format!(
+                            "  save {:.0}%, ${:.2}/mo",
+                            s.saving_pct, s.projected_monthly_saving_usd
+                        ),
                         Theme::ok(),
-                    ),
-                    Span::styled(s.summary_line(), Theme::normal()),
-                ])
+                    )),
+                ]
             })
             .collect()
     };

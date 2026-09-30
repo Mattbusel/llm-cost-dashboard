@@ -16,7 +16,23 @@ use tracing::{error, info, warn};
 #[derive(Parser)]
 #[command(
     name = "llm-dash",
-    about = "Real-time LLM token spend dashboard",
+    about = "See what your LLM calls cost: a live terminal dashboard plus one-shot cost reports",
+    long_about = "See what your LLM calls cost: a live terminal dashboard plus one-shot cost reports.
+
+Feed it a newline-delimited JSON log of your model calls (model, input_tokens,
+output_tokens, latency_ms, optional timestamp) and it prices every request from a
+built-in table of 83 models.",
+    after_help = "Examples:
+  llm-dash --demo                                  try the dashboard with sample traffic
+  llm-dash --log-file requests.ndjson --budget 50  watch your own log live
+  llm-dash --demo --compare                        rank every model by monthly cost
+  llm-dash --demo --forecast                       project the next hour, day, week, month
+  llm-dash --log-file requests.ndjson --diff 2026-09-01 2026-09-02
+
+Log line format:
+  {\"model\":\"gpt-4o-mini\",\"input_tokens\":512,\"output_tokens\":256,\"latency_ms\":340}
+
+Docs: https://github.com/Mattbusel/llm-cost-dashboard",
     version,
     author
 )]
@@ -162,16 +178,27 @@ struct Cli {
 }
 
 fn main() {
-    // Initialise tracing subscriber; RUST_LOG controls verbosity (default: info).
+    let cli = Cli::parse();
+
+    // Logs go to stderr; RUST_LOG controls verbosity. Without RUST_LOG the
+    // one-shot reports print warnings only, and the dashboard prints nothing,
+    // because stderr lines would be drawn over the TUI.
+    let runs_tui = cli.export_csv.is_none()
+        && cli.export_json.is_none()
+        && cli.export.is_none()
+        && !cli.compare
+        && !cli.forecast
+        && !cli.anomaly
+        && cli.diff.is_none();
+    let default_filter = if runs_tui { "off" } else { "warn" };
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(default_filter)),
         )
         .with_writer(std::io::stderr)
+        .with_ansi(std::env::var_os("NO_COLOR").is_none_or(|v| v.is_empty()))
         .init();
-
-    let cli = Cli::parse();
     info!(
         budget_usd = cli.budget,
         demo = cli.demo,
