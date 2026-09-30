@@ -1,6 +1,6 @@
 [package]
 name = "llm-cost-dashboard"
-version = "1.2.2"
+version = "1.2.3"
 edition = "2021"
 rust-version = "1.82"
 description = "See what your LLM API calls cost: a live terminal dashboard (llm-dash) for spend, budget, per-model costs and forecasts, pricing 83 models"

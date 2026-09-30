@@ -5,6 +5,11 @@ All notable changes to `llm-cost-dashboard` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.3] - 2026-09-30
+
+- Links point at GitLab.
+- Linux x86_64 release builds from GitLab CI; downloads and links now point at GitLab.
+
 ## [Unreleased]
 
 ## [1.2.2] - 2026-09-26
