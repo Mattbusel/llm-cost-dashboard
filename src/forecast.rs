@@ -380,8 +380,19 @@ pub struct HoltWintersForecast {
 ///
 /// ## Minimum Observations
 ///
-/// At least **3** observations are required before [`forecast`] returns a
-/// result (needed to initialise both level and trend).
+/// At least **3** observations at distinct times are required before
+/// [`forecast`] returns a result.
+///
+/// ## Method
+///
+/// The span between the first and last observation is cut into equal
+/// buckets (about a day each when the log covers 3 days or more, about an
+/// hour when it covers 3 hours or more, otherwise thirds of the span), each
+/// request's cost goes into its bucket, and Holt's method with a damped
+/// trend (damping 0.9) runs over the per-bucket spend rates. A horizon's
+/// spend is the sum of the per-bucket forecasts across it. Sparse logs with
+/// quiet periods are handled: empty buckets are real zero-spend periods,
+/// and the damped trend cannot drive a long horizon below zero.
 ///
 /// [`forecast`]: CostForecaster::forecast
 #[derive(Debug)]
@@ -465,79 +476,89 @@ impl CostForecaster {
             return None;
         }
 
-        // Work in incremental costs (first differences) rather than cumulative,
-        // because Holt-Winters level/trend make more sense on rates than on
-        // an ever-increasing cumulative series.
-        let increments: Vec<f64> = obs
-            .windows(2)
-            .map(|w| {
-                let dt = w[1].0 - w[0].0;
-                // Normalise to cost-per-second so unequal intervals cancel out.
-                (w[1].1 - w[0].1) / dt
-            })
-            .collect();
-
-        if increments.is_empty() {
+        // Spend arrives as point events at irregular times, so the series is
+        // first put on a regular grid: the span between the first and last
+        // observation is cut into `n` equal buckets and each request's cost
+        // (the step in the cumulative series) goes into the bucket it falls
+        // in. Empty buckets count as zero spend. Each bucket becomes a rate in
+        // USD per second.
+        //
+        // Before 1.3.0 the smoother ran on the rate between each pair of
+        // consecutive requests and extrapolated an undamped trend hundreds of
+        // steps ahead, so any small downward trend in a sparse log (quiet
+        // nights, a gap between bursts) drove the month projection below zero
+        // and it was clamped to $0.
+        let span = obs[obs.len() - 1].0 - obs[0].0;
+        if span <= 0.0 {
             return None;
         }
-
-        // Initialise level and trend from the first two increments.
-        let mut level = increments[0];
-        let mut trend = if increments.len() >= 2 {
-            increments[1] - increments[0]
+        let hour_secs = 3_600.0_f64;
+        let day_secs = 86_400.0_f64;
+        let target_bucket = if span >= 3.0 * day_secs {
+            day_secs
+        } else if span >= 3.0 * hour_secs {
+            hour_secs
         } else {
-            0.0
+            span / 3.0
         };
+        let n = ((span / target_bucket).round() as usize).max(3);
+        let bucket = span / n as f64;
+        let mut buckets = vec![0.0_f64; n];
+        for w in obs.windows(2) {
+            // Each step covers (previous time, this time], so buckets are
+            // closed on the right: a request exactly on a boundary belongs to
+            // the bucket that ends there.
+            let pos = (w[1].0 - obs[0].0) / bucket;
+            let idx = ((pos - 1e-9).ceil().max(1.0) as usize - 1).min(n - 1);
+            buckets[idx] += (w[1].1 - w[0].1).max(0.0);
+        }
+        let rates: Vec<f64> = buckets.iter().map(|c| c / bucket).collect();
 
-        // Residuals for RMSE computation.
-        let mut residuals: Vec<f64> = Vec::with_capacity(increments.len());
-
-        // Apply double exponential smoothing (Holt's linear method).
-        for &y in &increments {
+        // Holt's linear method with a damped trend (Gardner and McKenzie):
+        // the trend's influence fades by PHI per step, so a long horizon
+        // converges to a finite rate instead of running off to +/- infinity.
+        const PHI: f64 = 0.9;
+        let mut level = rates[0];
+        let mut trend = 0.0_f64;
+        let mut residuals: Vec<f64> = Vec::with_capacity(rates.len());
+        for &y in &rates[1..] {
+            let predicted = level + PHI * trend;
+            residuals.push(y - predicted);
             let prev_level = level;
-            let prev_trend = trend;
-            level = self.alpha * y + (1.0 - self.alpha) * (prev_level + prev_trend);
-            trend = self.beta * (level - prev_level) + (1.0 - self.beta) * prev_trend;
-            let forecast_t = prev_level + prev_trend;
-            residuals.push(y - forecast_t);
+            level = self.alpha * y + (1.0 - self.alpha) * predicted;
+            trend = self.beta * (level - prev_level) + (1.0 - self.beta) * PHI * trend;
         }
 
-        // RMSE of one-step-ahead residuals.
-        let rmse = {
+        // RMSE of one-step-ahead residuals (rate units).
+        let rmse = if residuals.is_empty() {
+            0.0
+        } else {
             let ss: f64 = residuals.iter().map(|r| r * r).sum();
             (ss / residuals.len() as f64).sqrt()
         };
 
-        // Typical observation interval in seconds.
-        let n = obs.len();
-        let avg_interval_secs = if n >= 2 {
-            (obs[n - 1].0 - obs[0].0) / (n - 1) as f64
-        } else {
-            3_600.0 // fallback: assume hourly
+        // Spend over a horizon: sum the per-bucket rate forecasts across it
+        // (the last bucket only partly), each floored at zero.
+        let spend_over = |horizon_secs: f64| -> f64 {
+            let steps = horizon_secs / bucket;
+            let whole = steps.floor() as usize;
+            let mut damp = 0.0_f64;
+            let mut phi_k = 1.0_f64;
+            let mut total = 0.0_f64;
+            for k in 1..=whole + 1 {
+                phi_k *= PHI;
+                damp += phi_k;
+                let rate = (level + damp * trend).max(0.0);
+                let fraction = if k <= whole { 1.0 } else { steps - whole as f64 };
+                total += rate * bucket * fraction;
+            }
+            total
         };
 
-        // Project h steps ahead: forecast(h) = level + h * trend (per second).
-        // Convert back from cost/second to total cost over the horizon.
-        let hour_secs = 3_600.0_f64;
-        let day_secs = 86_400.0_f64;
-        let week_secs = 7.0 * day_secs;
-        let month_secs = 30.0 * day_secs;
-
-        // Steps-ahead for each horizon.
-        let steps_hour = (hour_secs / avg_interval_secs).max(1.0);
-        let steps_day = (day_secs / avg_interval_secs).max(1.0);
-        let steps_week = (week_secs / avg_interval_secs).max(1.0);
-        let steps_month = (month_secs / avg_interval_secs).max(1.0);
-
-        // Holt forecast h steps ahead is level + h * trend (per second).  Spend
-        // over a horizon is the rate integrated across it, i.e. the average
-        // rate over steps 1..=h, not the rate at the far end.
-        let rate_h = |h: f64| -> f64 { (level + (h + 1.0) / 2.0 * trend).max(0.0) };
-
-        let next_hour_usd = rate_h(steps_hour) * hour_secs;
-        let next_day_usd = rate_h(steps_day) * day_secs;
-        let next_week_usd = rate_h(steps_week) * week_secs;
-        let next_month_usd = rate_h(steps_month) * month_secs;
+        let next_hour_usd = spend_over(hour_secs);
+        let next_day_usd = spend_over(day_secs);
+        let next_week_usd = spend_over(7.0 * day_secs);
+        let next_month_usd = spend_over(30.0 * day_secs);
 
         // 80 % prediction interval for next_hour (z_80 ≈ 1.28).
         let uncertainty = 1.28 * rmse * hour_secs;
@@ -1333,6 +1354,68 @@ mod tests {
         let f = make_hw_forecaster_linear(24, 0.001);
         let result = f.forecast(Some(1_000.0)).unwrap();
         assert!(!result.budget_warning, "no warning expected for tiny spend vs large budget");
+    }
+
+    #[test]
+    fn hw_constant_rate_projects_that_rate() {
+        // $0.50 every hour for a day: the projection must be about $0.50/h.
+        let f = make_hw_forecaster_linear(25, 0.50);
+        let r = f.forecast(None).unwrap();
+        assert!((r.next_day_usd - 12.0).abs() < 0.01, "next day {}", r.next_day_usd);
+        assert!((r.next_month_usd - 360.0).abs() < 0.5, "next month {}", r.next_month_usd);
+    }
+
+    /// Sparse, bursty log: a few calls during working hours on four days
+    /// with quiet nights and a two-day gap. Before 1.3.0 every horizon past
+    /// the next hour came out as exactly $0.
+    #[test]
+    fn hw_sparse_log_does_not_collapse_to_zero() {
+        let mut f = CostForecaster::new();
+        let base = 1_790_000_000.0_f64; // a day boundary does not matter
+        let hour = 3_600.0_f64;
+        let day = 24.0 * hour;
+        let mut cum = 0.0;
+        let mut total_after_first = 0.0;
+        let mut first = true;
+        for d in [0.0, 1.0, 3.0, 4.0] {
+            for h in [8.0, 10.0, 12.0, 14.0, 16.0] {
+                cum += 0.02;
+                if !first {
+                    total_after_first += 0.02;
+                }
+                first = false;
+                f.record(base + d * day + h * hour, cum);
+            }
+        }
+        let r = f.forecast(None).unwrap();
+        // Observed: total_after_first over (4 days + 8 h); about $0.084/day.
+        let span_days = (4.0 * day + 8.0 * hour) / day;
+        let observed_month = total_after_first / span_days * 30.0;
+        assert!(r.next_day_usd > 0.0, "next day {}", r.next_day_usd);
+        assert!(
+            r.next_month_usd > 0.5 * observed_month && r.next_month_usd < 2.0 * observed_month,
+            "next month {} vs observed rate {}",
+            r.next_month_usd,
+            observed_month
+        );
+    }
+
+    #[test]
+    fn hw_long_horizon_stays_finite_with_rising_spend() {
+        // Spend doubling every day for a week: the damped trend must keep the
+        // month projection finite and above the current daily rate x 30.
+        let mut f = CostForecaster::new();
+        let base = 1_790_000_000.0_f64;
+        let mut cum = 0.0;
+        for d in 0..8 {
+            for h in 0..24 {
+                cum += 0.01 * 2f64.powi(d) / 24.0;
+                f.record(base + (d * 24 + h) as f64 * 3_600.0, cum);
+            }
+        }
+        let r = f.forecast(None).unwrap();
+        assert!(r.next_month_usd.is_finite());
+        assert!(r.next_month_usd > 30.0 * 0.01 * 64.0, "{}", r.next_month_usd);
     }
 
     #[test]

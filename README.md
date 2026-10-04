@@ -1,21 +1,48 @@
-<p align="center">
-  <img src="https://gitlab.com/mattbusel/llm-cost-dashboard/-/raw/master/assets/banner.png" alt="llm-dash: see what every LLM call costs, live in your terminal" width="100%">
-</p>
+# llm-cost-dashboard
 
-<h3 align="center">See what your AI model calls cost, live in your terminal, before the bill arrives.</h3>
+Price every LLM API call your app makes, from a plain log line or the provider's own response, and see spend, budget, forecasts and per-model costs in a terminal dashboard, a Prometheus endpoint or your own Rust code.
 
 [![crates.io](https://img.shields.io/crates/v/llm-cost-dashboard.svg)](https://crates.io/crates/llm-cost-dashboard)
 [![docs.rs](https://docs.rs/llm-cost-dashboard/badge.svg)](https://docs.rs/llm-cost-dashboard)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-
-<p align="center"><a href="https://gitlab.com/mattbusel/llm-cost-dashboard/"><b>Website</b></a> · <a href="#install">Install</a> · <a href="#use-it-in-3-steps">Use it in 3 steps</a> · <a href="https://docs.rs/llm-cost-dashboard">Library docs</a></p>
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://gitlab.com/mattbusel/llm-cost-dashboard/-/blob/master/LICENSE)
 
 <p align="center">
   <img src="https://gitlab.com/mattbusel/llm-cost-dashboard/-/raw/master/assets/dashboard.gif" alt="llm-dash tailing a request log: new requests stream in, a 60,000-token gpt-4o call is flagged as a 26.7x cost anomaly, then the cost explorer sorts by price and opens that call" width="100%">
 </p>
+
+```rust
+use llm_cost_dashboard::ingest::Ingester;
+
+let mut costs = Ingester::new();
+// Any mix of your own log lines and saved OpenAI / Anthropic responses.
+costs.ingest_line(r#"{"model":"gpt-4o-mini","input_tokens":5200,"output_tokens":400}"#)?;
+costs.ingest_line(r#"{"model":"claude-sonnet-4-6","usage":{"input_tokens":900,"output_tokens":350,"cache_read_input_tokens":40000}}"#)?;
+for (model, s) in costs.ledger().by_model() {
+    println!("{model}: ${:.6} over {} call(s)", s.total_cost_usd, s.request_count);
+}
+println!("total: ${:.6}", costs.ledger().total_usd()); // total: $0.020970
+# Ok::<(), llm_cost_dashboard::DashboardError>(())
+```
+
+(`cargo run --example quickstart` runs exactly this.)
+
+## Why this crate
+
+| You want | llm-cost-dashboard | Alternatives |
+|---|---|---|
+| Price calls from logs you already have | Plain NDJSON, saved OpenAI or Anthropic responses, Claude Code session logs; prompt-cache reads and 5-minute / 1-hour cache writes priced separately | [ccstat](https://crates.io/crates/ccstat) reads coding-assistant logs only (Claude, Codex, ...) and is a CLI, not a library |
+| A price table you can trust and extend | 104 built-in models, cross-checked in the test suite against [llm-cost-cap](https://crates.io/crates/llm-cost-cap); load [LiteLLM's](https://github.com/BerriAI/litellm) community table (3,680 models) with `--prices` or `load_prices_json` | llm-cost-cap: 16 models, no cache-write pricing, and its Claude Opus 4.5 to 4.7 and Haiku 4.5 prices are out of date |
+| A forecast and a budget gate | Damped Holt forecast that copes with sparse, bursty logs; org, team and project budgets; webhook alerts | llm-cost-cap gates one call before it is sent (worth combining with this crate) |
+| To watch it live | `llm-dash`: ratatui dashboard that follows the log file, plus `/metrics` for Prometheus and Grafana | [edgequake-llm](https://crates.io/crates/edgequake-llm) tracks cost inside its own multi-provider client; you have to send your calls through it |
+| A small dependency | `default-features = false` leaves serde, chrono, csv and tokio's sync parts; the TUI, HTTP server, webhooks and CLI are features | |
+
+If all you need is "would this one call cost more than $X before I send it", [llm-cost-cap](https://crates.io/crates/llm-cost-cap) has no dependencies and a lookup with it takes about a quarter less time (see Benchmarks).
+
 ## Install
 
-**Linux** (x86_64, Ubuntu 20.04+ / Debian 11+). One line, no dependencies, installs to `~/.local/bin`:
+**The dashboard (`llm-dash`)**
+
+Linux (x86_64, Ubuntu 20.04+ / Debian 11+), one line, installs to `~/.local/bin`:
 
 ```sh
 mkdir -p ~/.local/bin && curl -fsSL https://gitlab.com/mattbusel/llm-cost-dashboard/-/releases/permalink/latest/downloads/llm-dash-linux-x86_64.tar.gz | tar xz --strip-components=1 -C ~/.local/bin --wildcards '*/llm-dash'
@@ -24,13 +51,32 @@ mkdir -p ~/.local/bin && curl -fsSL https://gitlab.com/mattbusel/llm-cost-dashbo
 | Other systems | |
 |---|---|
 | **Windows** | [Download llm-dash-windows-x86_64.exe](https://gitlab.com/mattbusel/llm-cost-dashboard/-/releases/permalink/latest/downloads/llm-dash-windows-x86_64.exe) and run it. (Unsigned, so SmartScreen may ask: *More info*, then *Run anyway*.) |
-| **macOS, or from source** | `cargo install --locked llm-cost-dashboard` |
+| **Any system with Rust** | `cargo binstall llm-cost-dashboard` (prebuilt Linux and Windows binaries) or `cargo install --locked llm-cost-dashboard` |
 
-The command is `llm-dash`. Every release, with SHA-256 checksums: [Releases](https://gitlab.com/mattbusel/llm-cost-dashboard/-/releases).
+Shell completions: `llm-dash --completions bash > ~/.local/share/bash-completion/completions/llm-dash` (also zsh, fish, powershell, elvish).
 
-**In GitLab CI:** price a log of your LLM calls in CI and fail when the projected monthly bill is over budget with the [`llm-spend-check`](https://gitlab.com/explore/catalog/mattbusel/llm-ci) CI/CD component.
+**The library**
 
-## Use it in 3 steps
+```toml
+[dependencies]
+llm-cost-dashboard = { version = "1.3", default-features = false }   # pricing, ingest, forecasts, exports
+```
+
+**In GitLab CI:** fail a pipeline when the projected monthly bill is over budget with the [`llm-spend-check`](https://gitlab.com/explore/catalog/mattbusel/llm-ci) CI/CD component.
+
+## Cargo features
+
+| Feature | Default | What it adds | Extra dependencies |
+|---|---|---|---|
+| `cli` | on | The `llm-dash` binary (implies `tui` and `server`) | clap, clap_complete, tracing-subscriber, toml |
+| `tui` | via `cli` | `ui`: the ratatui dashboard | ratatui, crossterm |
+| `server` | via `cli` | `api`: JSON/CSV endpoints and Prometheus `/metrics` | axum, tokio net |
+| `webhooks` | on | Slack / generic webhook alerts, signed with HMAC-SHA256 | reqwest (rustls), hmac, sha2 |
+| `async-openai` | off | `interop::async_openai`: price `async_openai` chat completion responses | async-openai (types only, no HTTP client) |
+
+With `default-features = false` the library still has the ledger, pricing, `ingest`, forecasting, budgets, anomaly detection and exports.
+
+## Use the dashboard in 3 steps
 
 **1. Look around with sample data** (no API key, no setup):
 
@@ -40,11 +86,14 @@ llm-dash --demo
 
 You get the dashboard above, filled with 20 sample Claude, GPT and Gemini requests. Press `x` for the cost explorer, `q` to quit.
 
-**2. Point it at your own calls.** Have your app append one JSON line per model call to a file:
+**2. Point it at your own calls.** Have your app append one JSON line per model call to a file. Your own fields or the provider's response both work:
 
 ```json
 {"model":"gpt-4o-mini","input_tokens":512,"output_tokens":256,"latency_ms":340}
+{"model":"gpt-4o","created":1790344980,"usage":{"prompt_tokens":5120,"completion_tokens":256,"prompt_tokens_details":{"cached_tokens":4096}}}
 ```
+
+Or point it at Claude Code's own session logs: `llm-dash --log-file ~/.claude/projects/<project>/<session>.jsonl`.
 
 **3. Watch that file live, with a monthly budget:**
 
@@ -54,13 +103,42 @@ llm-dash --log-file requests.ndjson --budget 50
 
 New lines show up as your app writes them. The budget gauge turns yellow at 80% and red past 100%, and a call that costs far more than usual for its model appears under **Cost Anomalies**.
 
-## Results
+## Works with what you already use
 
-What the one-shot reports print (real output from `llm-dash 1.2.2` on today's demo data):
+- **async-openai**: enable the `async-openai` feature and call `interop::async_openai::record_from_response(&response)`; cached prompt tokens are priced at the cached rate.
+- **Any other client** (reqwest, genai, rig, the Anthropic HTTP API): serialize the response to JSON and pass it to `Ingester::ingest_line`. OpenAI-style `usage.prompt_tokens` and Anthropic-style `usage.input_tokens` / `cache_read_input_tokens` / `cache_creation_input_tokens` are understood.
+- **LiteLLM's price table**: `llm-dash --prices model_prices_and_context_window.json` or `cost::pricing::load_prices_json`. Your own prices use the same call with `{"model": {"input_usd_per_1m": 0.5, "output_usd_per_1m": 1.5}}`.
+- **Prometheus / Grafana / VictoriaMetrics**: `llm-dash --serve 9898` (or `api::router` inside your axum app) exposes `llm_cost_usd_total`, `llm_requests_total`, `llm_tokens_total` and `llm_projected_monthly_cost_usd` at `/metrics`.
+- **Claude Code**: session logs under `~/.claude/projects` are read directly; `cargo run --example claude_code_spend` totals every session at API list prices.
+- **llm-cost-cap**: use it to gate a call before sending, and this crate to account for it after.
+
+## Examples
+
+| Example | What it shows |
+|---|---|
+| `quickstart` | The 10-line example above |
+| `claude_code_spend` | What your Claude Code sessions would cost at API prices, per model and per day |
+| `budget_check` | Price a log, forecast 30 days, exit 1 when over budget (a CI gate) |
+| `metrics_server` (`--features server`) | Record calls from your app and serve `/metrics` for Prometheus |
+
+## Benchmarks
+
+`cargo bench --bench vs_competitors`, on an Intel i7-13700KF, Windows 11, Rust 1.91, criterion medians:
+
+| Task | llm-cost-dashboard 1.3.0 | llm-cost-cap 0.1.0 |
+|---|---|---|
+| Price one call (5 models in rotation) | 24.2 ns | 18.6 ns |
+| Parse and price 10,000 mixed log lines (flat, OpenAI response, Claude Code) | 22.5 ms (445,000 lines/s) | no log parser |
+
+llm-cost-cap is faster at a single lookup because it does an exact-match hash lookup only; this crate also matches case-insensitively, falls back from dated ids (`claude-sonnet-4-5-20250929`) to the undated price, and checks run-time price overrides. Before 1.3.0 the lookup was a linear scan at 61.6 ns.
+
+## Sample output
+
+What the one-shot reports print (real output from `llm-dash 1.3.0` on the demo data):
 
 ```text
 $ llm-dash --demo --compare
-Multi-Provider Cost Comparison  (83 models, 22/day requests, 730in/348out avg tokens)
+Multi-Provider Cost Comparison  (104 models, 22/day requests, 730in/348out avg tokens)
 
   Model                                           Monthly USD   Daily USD   Per-1k-req USD  Provider
   ----------------------------------------------------------------------------------------------------
@@ -76,20 +154,18 @@ Cheapest: ministral-3b-2410 ($0.0285/mo)  |  Most expensive: gpt-4.5-preview ($7
 $ llm-dash --demo --budget 50 --forecast
 Holt-Winters Cost Forecast (based on 20 records)
 
-  Next hour:  $0.005665
-  Next day:   $0.1785
-  Next week:  $3.13
-  Next month: $44.33
+  Next hour:  $0.004256
+  Next day:   $0.1111
+  Next week:  $0.81
+  Next month: $3.49
 
-  80% CI (next hour): [$0.000000, $0.013657]
-
-  WARNING: forecasted monthly spend ($44.33) exceeds 80% of budget ($50.00)!
+  80% CI (next hour): [$0.000000, $0.010753]
+  Budget status: OK (monthly forecast $3.49 < 80% of $50.00 budget)
 ```
 
 In the recording above, the log's 70 requests cost $0.5845 in total, and one gpt-4o call with 60,000 input tokens cost $0.3375 on its own: 26.7 times that model's running average, which is what the anomaly panel reports.
 
 ## Your log format
-
 
 ```json
 {"model":"claude-sonnet-4-6","input_tokens":512,"output_tokens":256,"latency_ms":340,"timestamp":"2026-09-25T14:03:00Z"}
@@ -97,7 +173,18 @@ In the recording above, the log's 70 requests cost $0.5845 in total, and one gpt
 {"model":"gpt-4o","input_tokens":900,"output_tokens":0,"latency_ms":30000,"error":"timeout"}
 ```
 
-`model`, `input_tokens`, `output_tokens` and `latency_ms` are required; `provider`, `error` and `timestamp` are optional. `timestamp` (also accepted as `ts`, `time` or `created_at`) can be an RFC 3339 string or Unix seconds or milliseconds; a line without one is dated when it is read. The dashboard keeps watching `--log-file`, so lines your app appends while it is open show up live. Malformed lines are skipped (run with `RUST_LOG=warn` to see why each one was skipped). Model names are matched case-insensitively; unknown models are priced at a fallback of $5 / $15 per million tokens.
+`model`, `input_tokens` and `output_tokens` are required; `latency_ms`, `provider`, `error` and `timestamp` are optional.
+
+You can also log the API's own response object. Token counts are read from `prompt_tokens` / `completion_tokens` (OpenAI and compatible servers) or from a nested `usage` object (OpenAI `usage.prompt_tokens`, Anthropic `usage.input_tokens`), and OpenAI's `created` field counts as the timestamp:
+
+```json
+{"model":"gpt-4o-mini","created":1790344980,"usage":{"prompt_tokens":512,"completion_tokens":256,"total_tokens":768}}
+{"model":"claude-haiku-4-5","usage":{"input_tokens":900,"output_tokens":120},"latency_ms":610}
+```
+
+Claude Code session logs (`~/.claude/projects/**/*.jsonl`) are read as they are: each request is counted once although Claude Code repeats it on several lines, user turns and bookkeeping lines are skipped, and cache reads and 5-minute / 1-hour cache writes are priced separately.
+
+`timestamp` (also accepted as `ts`, `time`, `created_at` or `created`) can be an RFC 3339 string or Unix seconds or milliseconds; a line without one is dated when it is read. The dashboard keeps watching `--log-file`, so lines your app appends while it is open show up live. Malformed lines are skipped (run with `RUST_LOG=warn` to see why each one was skipped). Model names are matched case-insensitively, and a dated id such as `claude-sonnet-4-5-20250929` uses the undated price. Unknown models are priced at a guessed $5 / $15 per million tokens, and the one-shot reports list them on stderr so you can add real prices with `--prices`.
 
 ## The dashboard
 
@@ -140,9 +227,11 @@ llm-dash --demo --export markdown             # csv | json | jsonl | markdown, t
 ```
 
 ```bash
-llm-dash --demo --forecast                    # Holt-Winters projection of the next hour, day, week and month
+llm-dash --demo --forecast                    # projection of the next hour, day, week and month (damped Holt smoothing)
 llm-dash --log-file requests.ndjson --diff 2026-09-01 2026-09-02   # Markdown diff between two date prefixes
 ```
+
+`--forecast` puts the log on a regular grid (about a day per bucket when the log covers 3 days or more, an hour when it covers 3 hours or more), counts quiet periods as zero spend, and runs Holt's method with a damped trend over the per-bucket spend, so sparse logs give a sensible number instead of $0.
 
 `--forecast` and `--diff` need timestamps in your log lines (see above). Without them every record is dated at load time, so `--forecast` says there is not enough time spread and `--diff` lists the dates it does have.
 
@@ -157,7 +246,10 @@ llm-dash --log-file requests.ndjson --diff 2026-09-01 2026-09-02   # Markdown di
 | `--webhook-url <URL>` | | Slack or generic webhook for budget alerts (repeatable) |
 | `--webhook-threshold <USD>` | 80% of budget | Spend level that fires the webhook |
 | `--webhook-format <FORMAT>` | `generic` | `slack` or `generic` |
-| `--alerts <RULES_TOML>` | | Load budget alert rules and run a background check loop |
+| `--alerts <RULES_TOML>` | | Check budget alert rules once against the loaded data, then start the dashboard |
+| `--prices <FILE>` | | Load extra or corrected prices (LiteLLM JSON or a plain model map) |
+| `--bind <IP>` | `127.0.0.1` | Address for `--serve`; use `0.0.0.0` to accept other machines |
+| `--completions <SHELL>` | | Print a shell completion script and exit |
 | `--session <NAME>` | | Tag every ingested record with a session id |
 | `--export-csv <PATH>`, `--export-json <PATH>` | | Write all records and exit |
 | `--export <FORMAT>`, `--out <FILE>` | | Export tagged requests as csv, json, jsonl or markdown and exit |
@@ -175,7 +267,10 @@ llm-dash --demo --serve 8080
 curl localhost:8080/api/summary       # JSON cost summary
 curl localhost:8080/api/export.json   # full ledger as JSON
 curl localhost:8080/api/export.csv    # full ledger as CSV
+curl localhost:8080/metrics           # Prometheus text format
 ```
+
+The server listens on 127.0.0.1 unless you pass `--bind 0.0.0.0` (1.2.x listened on every interface).
 
 ### Budget alerts
 
@@ -195,20 +290,39 @@ window = "daily"        # daily | weekly | monthly
 cooldown_secs = 3600
 ```
 
-Webhook delivery needs the default `webhooks` feature; build with `--no-default-features` for a smaller binary without TLS.
-
 ## Supported models
 
-83 models across Anthropic, OpenAI, Google, DeepSeek, Mistral, Meta Llama (Together AI and Groq), xAI, Cohere, Perplexity, Amazon Bedrock, Alibaba Qwen, Writer and AI21. Prices are USD per million tokens, from `src/cost/pricing.rs` (last updated 2026-03-22); check them against your provider before relying on the numbers.
+104 models across Anthropic, OpenAI, Google, DeepSeek, Mistral, Meta Llama (Together AI and Groq), xAI, Cohere, Perplexity, Amazon Bedrock, Alibaba Qwen, Writer and AI21. Prices are USD per million tokens, from `src/cost/pricing.rs` (last updated 2026-10-03); check them against your provider before relying on the numbers.
 
 <details>
-<summary><b>Anthropic / Claude 4 family</b> (3)</summary>
+<summary><b>Anthropic / Claude 5 family (Anthropic list prices, 2026-09)</b> (6)</summary>
 
 | Model | Input ($/1M) | Output ($/1M) |
 |---|---|---|
-| `claude-opus-4-6` | $15 | $75 |
+| `claude-fable-5-1` | $10 | $50 |
+| `claude-fable-5` | $10 | $50 |
+| `claude-opus-5-5` | $4 | $20 |
+| `claude-opus-5` | $5 | $25 |
+| `claude-sonnet-5-5` | $2 | $10 |
+| `claude-sonnet-5` | $2 | $10 |
+
+</details>
+
+<details>
+<summary><b>Anthropic / Claude 4 family</b> (10)</summary>
+
+| Model | Input ($/1M) | Output ($/1M) |
+|---|---|---|
+| `claude-opus-4-8` | $5 | $25 |
+| `claude-opus-4-7` | $5 | $25 |
+| `claude-opus-4-6` | $5 | $25 |
+| `claude-opus-4-5` | $5 | $25 |
+| `claude-opus-4-1` | $15 | $75 |
+| `claude-opus-4` | $15 | $75 |
+| `claude-sonnet-4-5` | $3 | $15 |
+| `claude-sonnet-4` | $3 | $15 |
 | `claude-sonnet-4-6` | $3 | $15 |
-| `claude-haiku-4-5` | $0.25 | $1.25 |
+| `claude-haiku-4-5` | $1 | $5 |
 
 </details>
 
@@ -235,11 +349,25 @@ Webhook delivery needs the default `webhooks` feature; build with `--no-default-
 </details>
 
 <details>
+<summary><b>OpenAI / GPT-5 and GPT-4.1 families</b> (6)</summary>
+
+| Model | Input ($/1M) | Output ($/1M) |
+|---|---|---|
+| `gpt-5` | $1.25 | $10 |
+| `gpt-5-mini` | $0.25 | $2 |
+| `gpt-5-nano` | $0.05 | $0.4 |
+| `gpt-4.1` | $2 | $8 |
+| `gpt-4.1-mini` | $0.4 | $1.6 |
+| `gpt-4.1-nano` | $0.1 | $0.4 |
+
+</details>
+
+<details>
 <summary><b>OpenAI / GPT-4o family</b> (5)</summary>
 
 | Model | Input ($/1M) | Output ($/1M) |
 |---|---|---|
-| `gpt-4o` | $5 | $15 |
+| `gpt-4o` | $2.5 | $10 |
 | `gpt-4o-mini` | $0.15 | $0.6 |
 | `gpt-4-turbo` | $10 | $30 |
 | `gpt-4.5-preview` | $75 | $150 |
@@ -255,7 +383,7 @@ Webhook delivery needs the default `webhooks` feature; build with `--no-default-
 | `o1` | $15 | $60 |
 | `o1-preview` | $15 | $60 |
 | `o1-mini` | $1.1 | $4.4 |
-| `o3` | $10 | $40 |
+| `o3` | $2 | $8 |
 | `o3-mini` | $1.1 | $4.4 |
 | `o4-mini` | $1.1 | $4.4 |
 
@@ -273,11 +401,13 @@ Webhook delivery needs the default `webhooks` feature; build with `--no-default-
 </details>
 
 <details>
-<summary><b>Google / Gemini 2 family</b> (4)</summary>
+<summary><b>Google / Gemini 2 family</b> (6)</summary>
 
 | Model | Input ($/1M) | Output ($/1M) |
 |---|---|---|
 | `gemini-2.5-pro` | $1.25 | $10 |
+| `gemini-2.5-flash` | $0.3 | $2.5 |
+| `gemini-2.5-flash-lite` | $0.1 | $0.4 |
 | `gemini-2.0-flash` | $0.1 | $0.4 |
 | `gemini-2.0-flash-lite` | $0.075 | $0.3 |
 | `gemini-2.0-flash-thinking` | $0.15 | $0.6 |
@@ -289,7 +419,7 @@ Webhook delivery needs the default `webhooks` feature; build with `--no-default-
 
 | Model | Input ($/1M) | Output ($/1M) |
 |---|---|---|
-| `gemini-1.5-pro` | $3.5 | $10.5 |
+| `gemini-1.5-pro` | $1.25 | $5 |
 | `gemini-1.5-flash` | $0.075 | $0.3 |
 | `gemini-1.5-flash-8b` | $0.0375 | $0.15 |
 
@@ -303,7 +433,7 @@ Webhook delivery needs the default `webhooks` feature; build with `--no-default-
 | `deepseek-r1` | $0.55 | $2.19 |
 | `deepseek-v3` | $0.27 | $1.1 |
 | `deepseek-v2-5` | $0.14 | $0.28 |
-| `deepseek-chat` | $0.27 | $1.1 |
+| `deepseek-chat` | $0.28 | $0.42 |
 | `deepseek-coder` | $0.14 | $0.28 |
 | `deepseek-r1-distill-llama-70b` | $0.55 | $2.19 |
 | `deepseek-r1-distill-qwen-32b` | $0.55 | $2.19 |
@@ -428,7 +558,6 @@ Webhook delivery needs the default `webhooks` feature; build with `--no-default-
 
 </details>
 
-
 ## Library usage
 
 Everything the dashboard does is also a Rust library ([docs.rs](https://docs.rs/llm-cost-dashboard)).
@@ -438,7 +567,7 @@ Everything the dashboard does is also a Rust library ([docs.rs](https://docs.rs/
 
 ```toml
 [dependencies]
-llm-cost-dashboard = "1.2"
+llm-cost-dashboard = { version = "1.3", default-features = false }
 ```
 
 The crate is `llm_cost_dashboard`. A ledger of priced requests:
@@ -452,6 +581,7 @@ ledger.add(CostRecord::new("gpt-4o-mini", "openai", 512, 256, 34))?;
 ledger.add(CostRecord::new("claude-sonnet-4-6", "anthropic", 1200, 400, 900))?;
 println!("total: ${:.6}", ledger.total_usd());
 println!("projected per month: ${:.2}", ledger.projected_monthly_usd(1));
+# Ok::<(), llm_cost_dashboard::DashboardError>(())
 ```
 
 Which model would be cheapest for this traffic:
@@ -487,6 +617,7 @@ for alert in tree.spend("platform", "embeddings-prod", 190.0)? {
 }
 let summary = tree.summary();
 println!("org: ${:.2} of ${:.2}", summary.org_spent_usd, summary.org_limit_usd);
+# Ok::<(), llm_cost_dashboard::DashboardError>(())
 ```
 
 Cost spikes, with a rolling Z-score detector:
@@ -551,7 +682,7 @@ Other public modules include `budget::planner` (period budgets split by percenta
 <details>
 <summary>Source layout</summary>
 
-```
+```text
 src/
   main.rs            CLI (clap): TUI launch and the one-shot report flags
   ui/                ratatui app state, event loop, dashboard layout, widgets, cost explorer
@@ -559,7 +690,9 @@ src/
   cost/              CostRecord, CostLedger, pricing table (pricing.rs)
   budget/            budget envelope, org/team/project hierarchy, planner
   comparison.rs      multi-provider monthly cost ranking
-  forecast.rs        OLS and Holt-Winters forecasters
+  ingest.rs          log lines to priced records (the library entry point)
+  interop.rs         adapters for other crates (async-openai)
+  forecast.rs        OLS and damped-Holt forecasters
   anomaly.rs         rolling and Welford Z-score detectors
   api/               axum server for --serve
   alerting.rs, alerts.rs, webhook/   alert rules and delivery
@@ -574,8 +707,8 @@ tests/, benches/     integration tests and criterion benchmarks
 
 - The dashboard follows `--log-file` as it grows (polling every half second) but does not read stdin. The one-shot reports (`--forecast`, `--diff`, exports) read the file once.
 - Time-based reports are only as good as the `timestamp` field in your log lines; lines without one are dated when read.
-- `--serve` exposes a snapshot of the data loaded at startup; lines tailed afterwards appear in the TUI but not in the HTTP API.
-- Prices are a static table; verify them against your provider's current pricing.
+- `--alerts` checks its rules once, against the data loaded at start-up.
+- Prices are a built-in table (cross-checked against LiteLLM's table in October 2026: 63 of the 74 models both list agree; the rest are third-party resellers with different prices); load LiteLLM's file with `--prices` to stay current.
 - The crate is large (about 80 modules). The core path (ledger, pricing, TUI, export, comparison, HTTP API) is what the binary uses; many analysis modules are library-only.
 
 ```bash
@@ -586,4 +719,4 @@ RUST_LOG=debug cargo run -- --demo --compare
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+MIT, see [LICENSE](https://gitlab.com/mattbusel/llm-cost-dashboard/-/blob/master/LICENSE).

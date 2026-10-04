@@ -25,9 +25,9 @@ fn pricing_every_known_model_has_nonzero_rates() {
 
 #[test]
 fn pricing_cost_for_1000_tokens_gpt4o() {
-    // gpt-4o: $5.00/1M input  → 1 000 tokens = $0.005
+    // gpt-4o: $2.50 per 1M input tokens, so 1000 tokens cost $0.0025
     let cost = compute_cost("gpt-4o", 1_000, 0);
-    let expected = 5.00 * 1_000.0 / 1_000_000.0;
+    let expected = 2.50 * 1_000.0 / 1_000_000.0;
     assert!(
         (cost - expected).abs() < 1e-10,
         "gpt-4o 1k input cost = {cost}, expected {expected}"
@@ -221,7 +221,7 @@ fn calculator_aggregate_multiple_models() {
     ledger
         .add(CostRecord::new("gpt-4o-mini", "openai", 1_000_000, 0, 10))
         .unwrap();
-    let expected = 5.00 + 0.15;
+    let expected = 2.50 + 0.15;
     assert!(
         (ledger.total_usd() - expected).abs() < 1e-9,
         "total = {}, expected {expected}",

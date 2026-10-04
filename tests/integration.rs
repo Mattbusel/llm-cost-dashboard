@@ -2,6 +2,8 @@
 //!
 //! These tests exercise the public API as a whole, verifying that components
 //! compose correctly end-to-end.
+#![cfg(feature = "tui")]
+
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use llm_cost_dashboard::{
@@ -93,8 +95,8 @@ fn malformed_line_skipped_gracefully() {
 #[test]
 fn missing_required_field_returns_error() {
     let mut log = RequestLog::new();
-    // latency_ms is missing
-    let result = log.ingest_line(r#"{"model":"gpt-4o","input_tokens":100,"output_tokens":50}"#);
+    // output_tokens is missing (latency_ms is optional since 1.3.0)
+    let result = log.ingest_line(r#"{"model":"gpt-4o","input_tokens":100,"latency_ms":5}"#);
     assert!(result.is_err());
 }
 

@@ -1,50 +1,22 @@
 #![deny(missing_docs)]
-//! # llm-cost-dashboard
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![doc = include_str!("../README.md")]
 //!
-//! Price your LLM API calls and total them up: the library behind the
-//! `llm-dash` terminal dashboard.
+//! ## Where to start in the API
 //!
-//! ![llm-dash dashboard](https://gitlab.com/mattbusel/llm-cost-dashboard/-/raw/master/assets/dashboard.gif)
-//!
-//! Want the dashboard itself? Install the binary with
-//! `cargo install llm-cost-dashboard` (or see the
-//! [README](https://gitlab.com/mattbusel/llm-cost-dashboard#install) for
-//! Homebrew, Scoop and one-line installers) and run `llm-dash --demo`.
-//!
-//! ## Quick example
-//!
-//! ```
-//! use llm_cost_dashboard::{CostLedger, CostRecord};
-//!
-//! let mut ledger = CostLedger::new();
-//! // model, provider, input tokens, output tokens, latency in ms
-//! ledger.add(CostRecord::new("gpt-4o-mini", "openai", 512, 256, 34))?;
-//! ledger.add(CostRecord::new("claude-sonnet-4-6", "anthropic", 1200, 400, 900))?;
-//!
-//! assert_eq!(ledger.len(), 2);
-//! println!("spent ${:.6}", ledger.total_usd());
-//! for (model, stats) in ledger.by_model() {
-//!     println!("{model}: ${:.6} over {} requests", stats.total_cost_usd, stats.request_count);
-//! }
-//! # Ok::<(), llm_cost_dashboard::DashboardError>(())
-//! ```
-//!
-//! ## Where to start
-//!
-//! - [`CostRecord`] and [`CostLedger`]: one priced request, and the running ledger.
-//! - [`cost::pricing::compute_cost`]: the price of a call from the built-in table of 83 models.
-//! - [`ProviderComparison`]: rank every priced model by monthly cost for a workload.
-//! - [`SpendForecaster`] and [`CostForecaster`]: project spend from what you have so far.
-//! - [`AnomalyDetector`]: flag cost spikes with a rolling Z-score.
-//! - [`OrgTree`]: org, team and project budgets with alerts.
-//! - [`ui::App`]: the ratatui dashboard state, if you want to embed the TUI.
+//! - [`ingest::Ingester`]: log lines in, priced [`CostRecord`]s out.
+//! - [`cost::pricing`]: the price table, [`cost::pricing::load_prices_json`] and [`cost::pricing::set_price`].
+//! - [`CostLedger`]: totals, per-model stats, exports.
+//! - [`forecast::CostForecaster`]: hour, day, week and month projections.
+//! - [`budget::hierarchy::OrgTree`]: org, team and project budgets.
+//! - `api::router` / `api::prometheus_text` (feature `server`): HTTP and Prometheus.
 //!
 //! ## Modules
 //!
 //! - [`alerting`] - webhook-based alert delivery with cooldown deduplication
 //! - [`allocation`] - team/project cost allocation with chargeback/showback workflows
 //! - [`anomaly`] - rolling Z-score cost spike detector
-//! - [`api`] - optional Axum HTTP API server (`--serve` mode)
+//! - `api` - optional Axum HTTP API server and Prometheus endpoint (feature `server`)
 //! - [`budget`] - hard budget enforcement, soft alert thresholds, and org→team→project hierarchy ([`budget::hierarchy::OrgTree`])
 //! - [`comparison`] - multi-provider side-by-side cost comparison and monthly projections ([`comparison::ProviderComparison`])
 //! - [`cost`] - per-request cost records and the append-only ledger
@@ -61,7 +33,7 @@
 //! - [`tags`] - lightweight key=value cost attribution tags with top-N spend queries
 //! - [`trace`] - lightweight distributed tracing
 //! - [`trends`] - daily time-series aggregation, moving averages, period-over-period comparison, and ASCII sparklines
-//! - [`ui`] - ratatui TUI application state and event loop
+//! - `ui` - ratatui TUI application state and event loop (feature `tui`)
 //! - [`validator`] - API key validation for Anthropic, OpenAI, and Google
 //! - [`webhook`] - Slack / generic webhook alerts on budget threshold
 //!
@@ -69,12 +41,13 @@
 //!
 //! - [Reddit-Options-Trader-ROT](https://gitlab.com/mattbusel/Reddit-Options-Trader-ROT)
 //! - [tokio-prompt-orchestrator](https://gitlab.com/mattbusel/tokio-prompt-orchestrator)
-//! - [rot-signals-api](https://gitlab.com/mattbusel/rot-signals-api)
 
 pub mod alerting;
 pub mod alerts;
 pub mod allocation;
 pub mod anomaly;
+#[cfg(feature = "server")]
+#[cfg_attr(docsrs, doc(cfg(feature = "server")))]
 pub mod api;
 pub mod budget;
 pub mod comparison;
@@ -82,6 +55,8 @@ pub mod cost;
 pub mod error;
 pub mod export;
 pub mod forecast;
+pub mod ingest;
+pub mod interop;
 pub mod log;
 pub mod org;
 pub mod recommendations;
@@ -92,6 +67,8 @@ pub mod tail;
 pub mod tags;
 pub mod trace;
 pub mod trends;
+#[cfg(feature = "tui")]
+#[cfg_attr(docsrs, doc(cfg(feature = "tui")))]
 pub mod ui;
 pub mod validator;
 pub mod webhook;
@@ -120,6 +97,7 @@ pub use log::{LogEntry, RequestLog};
 pub use org::{Organization, Project, Team};
 pub use tags::{TagIndex, TaggedRecord, Tags};
 pub use trace::{SpanStore, TraceSpan};
+#[cfg(feature = "tui")]
 pub use ui::App;
 pub use validator::{
     AnthropicValidator, GoogleValidator, MultiValidator, OpenAiValidator, ValidationResult,

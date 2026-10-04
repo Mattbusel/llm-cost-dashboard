@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 use llm_cost_dashboard::export::{export_csv, export_json};
 use llm_cost_dashboard::ui::{self, App};
 use llm_cost_dashboard::webhook::{WebhookConfig, WebhookFormat};
@@ -20,8 +20,9 @@ use tracing::{error, info, warn};
     long_about = "See what your LLM calls cost: a live terminal dashboard plus one-shot cost reports.
 
 Feed it a newline-delimited JSON log of your model calls (model, input_tokens,
-output_tokens, latency_ms, optional timestamp) and it prices every request from a
-built-in table of 83 models.",
+output_tokens, optional latency_ms and timestamp) and it prices every request from a
+built-in table of 104 models. Saved OpenAI or Anthropic responses work too: token
+counts are read from prompt_tokens/completion_tokens or a nested usage object.",
     after_help = "Examples:
   llm-dash --demo                                  try the dashboard with sample traffic
   llm-dash --log-file requests.ndjson --budget 50  watch your own log live
@@ -43,8 +44,9 @@ struct Cli {
 
     /// JSON log file to load and then tail for live data (newline-delimited JSON).
     ///
-    /// Each line needs model, input_tokens, output_tokens and latency_ms, and
-    /// may carry a "timestamp" (RFC 3339 or Unix seconds). Lines without one
+    /// Each line needs model, input_tokens and output_tokens (or
+    /// prompt_tokens/completion_tokens, or a nested "usage" object), and may
+    /// carry latency_ms and a "timestamp" (RFC 3339 or Unix seconds). Lines without one
     /// are dated when they are read. In the dashboard, lines appended to the
     /// file after start-up show up live.
     #[arg(long)]
@@ -62,6 +64,21 @@ struct Cli {
     ///   GET /api/export.csv   – full ledger as CSV download
     #[arg(long, value_name = "PORT")]
     serve: Option<u16>,
+
+    /// Address for --serve to listen on. The default only accepts
+    /// connections from this machine; use 0.0.0.0 to allow others.
+    #[arg(long, value_name = "IP", default_value = "127.0.0.1")]
+    bind: std::net::IpAddr,
+
+    /// Load extra or corrected model prices from a JSON file before pricing
+    /// anything: LiteLLM's model_prices_and_context_window.json, or
+    /// {"model": {"input_usd_per_1m": 0.5, "output_usd_per_1m": 1.5}}.
+    #[arg(long, value_name = "FILE")]
+    prices: Option<PathBuf>,
+
+    /// Print a shell completion script (bash, zsh, fish, powershell, elvish) and exit.
+    #[arg(long, value_name = "SHELL")]
+    completions: Option<clap_complete::Shell>,
 
     /// Slack or generic webhook URL to POST budget alerts to.
     ///
@@ -142,7 +159,8 @@ struct Cli {
     #[arg(long)]
     forecast: bool,
 
-    /// Load budget alert rules from a TOML file and start a background check loop.
+    /// Check budget alert rules from a TOML file once against the loaded data,
+    /// then start the dashboard.
     ///
     /// The TOML file must contain an array of `[[rules]]` tables, each with
     /// the fields: `name`, `threshold_usd`, `window` ("daily"|"weekly"|"monthly"),
@@ -179,6 +197,26 @@ struct Cli {
 
 fn main() {
     let cli = Cli::parse();
+
+    if let Some(shell) = cli.completions {
+        clap_complete::generate(shell, &mut Cli::command(), "llm-dash", &mut std::io::stdout());
+        return;
+    }
+
+    if let Some(path) = &cli.prices {
+        let loaded = std::fs::read_to_string(path)
+            .map_err(|e| e.to_string())
+            .and_then(|t| {
+                llm_cost_dashboard::cost::pricing::load_prices_json(&t).map_err(|e| e.to_string())
+            });
+        match loaded {
+            Ok(n) => eprintln!("Loaded prices for {n} models from {}", path.display()),
+            Err(e) => {
+                eprintln!("Error reading price file {}: {e}", path.display());
+                std::process::exit(1);
+            }
+        }
+    }
 
     // Logs go to stderr; RUST_LOG controls verbosity. Without RUST_LOG the
     // one-shot reports print warnings only, and the dashboard prints nothing,
@@ -233,6 +271,26 @@ fn main() {
         });
     }
 
+    let warn_unpriced = |app: &App| {
+        let mut unknown: Vec<&str> = app
+            .ledger
+            .records()
+            .iter()
+            .map(|r| r.model.as_str())
+            .filter(|m| llm_cost_dashboard::cost::pricing::lookup_known(m).is_none())
+            .collect();
+        unknown.sort_unstable();
+        unknown.dedup();
+        if !unknown.is_empty() {
+            let (i, o) = llm_cost_dashboard::cost::pricing::FALLBACK_PRICING;
+            eprintln!(
+                "Note: {} model(s) are not in the price table and were priced at a guessed ${i} / ${o} per million tokens: {}. Add real prices with --prices FILE.",
+                unknown.len(),
+                unknown.join(", ")
+            );
+        }
+    };
+
     if cli.demo {
         info!("loading demo data");
         app.load_demo_data();
@@ -263,6 +321,10 @@ fn main() {
                 std::process::exit(1);
             }
         }
+    }
+
+    if !runs_tui {
+        warn_unpriced(&app);
     }
 
     // Handle --export-csv: write CSV to the given path and exit (no TUI).
@@ -680,13 +742,21 @@ fn main() {
         let ledger_for_api = Arc::clone(&shared_ledger);
         let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
         rt.spawn(async move {
-            if let Err(e) = llm_cost_dashboard::api::serve(ledger_for_api, port).await {
+            if let Err(e) = llm_cost_dashboard::api::serve_on(
+                ledger_for_api,
+                std::net::SocketAddr::new(cli.bind, port),
+            )
+            .await {
                 error!(error = %e, "HTTP API server error");
             }
         });
 
         info!("starting TUI event loop (--serve mode)");
-        if let Err(e) = ui::run_with_feed(app, tail_feed(&cli.log_file, tail_offset)) {
+        if let Err(e) = ui::run_with_feed(
+            app,
+            tail_feed(&cli.log_file, tail_offset)
+                .map(|rx| llm_cost_dashboard::api::mirror_feed(rx, Arc::clone(&shared_ledger))),
+        ) {
             error!(error = %e, "dashboard terminated with error");
             eprintln!("Dashboard error: {e}");
             std::process::exit(1);

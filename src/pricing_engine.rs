@@ -120,7 +120,7 @@ impl PricingEngine {
     }
 
     /// Registers a model with an initial price.  If the model already exists
-    /// the call is a no-op (use [`update_price`] to revise).
+    /// the call is a no-op (use [`Self::update_price`] to revise).
     pub fn register_model(&mut self, model_id: String, input_per_1k: f64, output_per_1k: f64) {
         if self.models.contains_key(&model_id) {
             return;

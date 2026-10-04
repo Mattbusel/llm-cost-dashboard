@@ -329,14 +329,6 @@ mod tests {
         HyperParam { name: name.to_string(), value: HpValue::Float(v) }
     }
 
-    fn hp_int(name: &str, v: i64) -> HyperParam {
-        HyperParam { name: name.to_string(), value: HpValue::Int(v) }
-    }
-
-    fn hp_bool(name: &str, v: bool) -> HyperParam {
-        HyperParam { name: name.to_string(), value: HpValue::Bool(v) }
-    }
-
     fn hp_str(name: &str, v: &str) -> HyperParam {
         HyperParam { name: name.to_string(), value: HpValue::Str(v.to_string()) }
     }
@@ -447,7 +439,7 @@ mod tests {
 
     #[test]
     fn hp_value_as_f64() {
-        assert_eq!(HpValue::Float(3.14).as_f64(), Some(3.14));
+        assert_eq!(HpValue::Float(2.5).as_f64(), Some(2.5));
         assert_eq!(HpValue::Int(-7).as_f64(), Some(-7.0));
         assert_eq!(HpValue::Bool(true).as_f64(), Some(1.0));
         assert_eq!(HpValue::Bool(false).as_f64(), Some(0.0));

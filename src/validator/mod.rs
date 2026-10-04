@@ -33,6 +33,7 @@ pub struct ValidationResult {
 }
 
 impl ValidationResult {
+    #[cfg_attr(not(feature = "webhooks"), allow(dead_code))]
     fn ok(tier: Option<String>) -> Self {
         Self { is_valid: true, tier, remaining_quota: None, error_message: None }
     }

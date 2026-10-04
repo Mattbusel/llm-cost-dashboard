@@ -718,7 +718,7 @@ mod exporter_tests {
 
     #[test]
     fn test_export_error_io_display() {
-        let e = ExportError::Io(std::io::Error::new(std::io::ErrorKind::Other, "oops"));
+        let e = ExportError::Io(std::io::Error::other("oops"));
         assert!(e.to_string().contains("I/O error"));
     }
 }

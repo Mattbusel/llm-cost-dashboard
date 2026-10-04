@@ -24,6 +24,7 @@
 //! ```
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "webhooks")]
 use tracing::{info, warn};
 
 /// Supported webhook payload formats.
@@ -48,17 +49,69 @@ pub struct WebhookConfig {
 }
 
 /// Alert payload for a Slack webhook.
+#[cfg(feature = "webhooks")]
 #[derive(Serialize)]
 struct SlackPayload {
     text: String,
 }
 
 /// Alert payload for a generic JSON webhook.
+#[cfg(feature = "webhooks")]
 #[derive(Serialize)]
 struct GenericPayload {
     text: String,
     spent_usd: f64,
     limit_usd: f64,
+}
+
+/// Blocking version of [`fire_budget_alert`], for callers without a Tokio
+/// runtime (the dashboard calls it from a background thread). Same payloads,
+/// 10 second timeout. A no-op returning `Ok(())` without the `webhooks`
+/// feature.
+#[allow(unused_variables)]
+pub fn fire_budget_alert_blocking(
+    cfg: &WebhookConfig,
+    spent_usd: f64,
+    limit_usd: f64,
+) -> Result<(), String> {
+    #[cfg(feature = "webhooks")]
+    {
+        let msg = format!(
+            "LLM Cost Alert: spent ${spent_usd:.4} of ${limit_usd:.4} monthly budget ({:.1}%)",
+            (spent_usd / limit_usd) * 100.0,
+        );
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .map_err(|e| e.to_string())?;
+        let req = client.post(&cfg.url);
+        let req = match cfg.format {
+            WebhookFormat::Slack => req.json(&SlackPayload { text: msg }),
+            WebhookFormat::Generic => req.json(&GenericPayload {
+                text: msg,
+                spent_usd,
+                limit_usd,
+            }),
+        };
+        match req.send() {
+            Ok(resp) if resp.status().is_success() => {
+                info!(url = %cfg.url, "webhook delivered");
+                Ok(())
+            }
+            Ok(resp) => {
+                warn!(status = %resp.status(), "webhook returned non-success status");
+                Err(format!("webhook HTTP {}", resp.status()))
+            }
+            Err(e) => {
+                warn!(error = %e, "webhook delivery failed");
+                Err(e.to_string())
+            }
+        }
+    }
+    #[cfg(not(feature = "webhooks"))]
+    {
+        Ok(())
+    }
 }
 
 /// Post a budget-alert notification to a webhook endpoint.

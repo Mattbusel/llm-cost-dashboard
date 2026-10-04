@@ -420,7 +420,7 @@ impl TrendAnalyzer {
             4 | 6 | 9 | 11 => 30,
             2 => {
                 // Gregorian leap year.
-                if (year % 4 == 0 && year % 100 != 0) || year % 400 == 0 {
+                if (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400) {
                     29
                 } else {
                     28

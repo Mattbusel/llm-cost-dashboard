@@ -120,21 +120,33 @@ impl CostRecord {
 
     /// Attach cache hit/miss token counts and recompute the total cost.
     ///
-    /// Cache-read tokens are billed at 10% of the model's normal input rate.
-    /// Cache-write tokens are billed at 125% of the model's normal input rate.
+    /// Cache-read tokens are billed at the model's cache-read rate (10% of
+    /// its input rate unless a loaded price file says otherwise), and
+    /// cache-write tokens at its 5-minute cache-write rate (125% of input).
     /// Both are *in addition* to any non-cached `input_tokens` already on the
     /// record.
-    pub fn with_cache(
+    pub fn with_cache(self, cache_read_tokens: u64, cache_write_tokens: u64) -> Self {
+        self.with_cache_tiers(cache_read_tokens, cache_write_tokens, 0)
+    }
+
+    /// Like [`CostRecord::with_cache`], with 1-hour cache writes priced
+    /// separately (200% of the input rate, Anthropic's rate). Claude Code
+    /// logs report both kinds.
+    pub fn with_cache_tiers(
         mut self,
         cache_read_tokens: u64,
-        cache_write_tokens: u64,
+        cache_write_5m_tokens: u64,
+        cache_write_1h_tokens: u64,
     ) -> Self {
-        let (ir, _) = pricing::lookup(&self.model);
-        let read_cost = cache_read_tokens as f64 * ir * 0.10 / 1_000_000.0;
-        let write_cost = cache_write_tokens as f64 * ir * 1.25 / 1_000_000.0;
+        let (ir, or_) = pricing::lookup(&self.model);
+        let price = pricing::price_of(&self.model).unwrap_or(pricing::ModelPrice::new(ir, or_));
+        let read_cost = cache_read_tokens as f64 * price.cache_read_rate() / 1_000_000.0;
+        let write_cost = (cache_write_5m_tokens as f64 * price.cache_write_rate()
+            + cache_write_1h_tokens as f64 * price.cache_write_1h_rate())
+            / 1_000_000.0;
         self.cache = CacheBreakdown {
             cache_read_tokens,
-            cache_write_tokens,
+            cache_write_tokens: cache_write_5m_tokens + cache_write_1h_tokens,
             cache_read_cost_usd: read_cost,
             cache_write_cost_usd: write_cost,
         };
@@ -477,7 +489,7 @@ mod tests {
         ledger.add(make_record("gpt-4o", 1_000_000, 0, 10)).unwrap();
         let stats = ledger.by_model();
         let s = &stats["gpt-4o"];
-        assert!((s.avg_cost_per_request - 5.0).abs() < 1e-9);
+        assert!((s.avg_cost_per_request - 2.5).abs() < 1e-9);
     }
 
     #[test]

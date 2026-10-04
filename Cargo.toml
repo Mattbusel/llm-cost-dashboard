@@ -1,73 +1,89 @@
 [package]
 name = "llm-cost-dashboard"
-version = "1.2.3"
+version = "1.3.0"
 edition = "2021"
-rust-version = "1.82"
-description = "See what your LLM API calls cost: a live terminal dashboard (llm-dash) for spend, budget, per-model costs and forecasts, pricing 83 models"
-keywords = ["llm", "cost", "tui", "openai", "anthropic"]
+rust-version = "1.88"
+description = "Price every LLM API call from your logs or the provider's response (104 models, prompt caching, Claude Code logs) and see spend, budgets and forecasts in a terminal dashboard, Prometheus or Rust"
+keywords = ["llm", "cost", "pricing", "openai", "anthropic"]
 categories = ["command-line-utilities", "visualization", "development-tools"]
 license = "MIT"
 repository = "https://gitlab.com/mattbusel/llm-cost-dashboard"
-homepage = "https://gitlab.com/mattbusel/llm-cost-dashboard/"
+homepage = "https://gitlab.com/mattbusel/llm-cost-dashboard"
 documentation = "https://docs.rs/llm-cost-dashboard"
 readme = "README.md"
 authors = ["Matt Busel"]
-exclude = ["tests/fixtures/**", ".github/**", "assets/**", "packaging/**", "docs/**", "install.sh", "install.ps1"]
+include = ["src/**/*", "tests/**/*", "benches/**/*", "examples/**/*", "README.md", "CHANGELOG.md", "LICENSE", "Cargo.toml", "Cargo.lock"]
 
-[package.metadata.binstall]
-pkg-url = "{ repo }/releases/download/v{ version }/llm-cost-dashboard-v{ version }-{ target }{ archive-suffix }"
-bin-dir = "llm-cost-dashboard-v{ version }-{ target }/{ bin }{ binary-ext }"
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+# cargo binstall: prebuilt binaries from GitLab releases (Linux x86_64 and
+# Windows x86_64); other targets build from source.
+[package.metadata.binstall.overrides.x86_64-unknown-linux-gnu]
+pkg-url = "{ repo }/-/releases/v{ version }/downloads/llm-dash-linux-x86_64.tar.gz"
+bin-dir = "llm-dash-v{ version }-x86_64-unknown-linux-gnu/{ bin }{ binary-ext }"
 pkg-fmt = "tgz"
 
 [package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
-pkg-fmt = "zip"
+pkg-url = "{ repo }/-/releases/v{ version }/downloads/llm-dash-windows-x86_64.exe"
+pkg-fmt = "bin"
 
 [features]
-default = ["webhooks"]
-webhooks = ["reqwest/rustls-tls"]
+default = ["cli", "webhooks"]
+# The llm-dash binary: terminal dashboard, HTTP server, argument parsing.
+cli = ["tui", "server", "dep:clap", "dep:clap_complete", "dep:tracing-subscriber", "dep:toml"]
+# The ratatui dashboard (`ui` module).
+tui = ["dep:ratatui", "dep:crossterm"]
+# The HTTP API and Prometheus endpoint (`api` module).
+server = ["dep:axum", "tokio/net", "tokio/rt-multi-thread"]
+# Webhook alert delivery (reqwest with rustls).
+webhooks = ["dep:reqwest"]
+# Interop: price async-openai chat completion responses (types only, no HTTP client).
+async-openai = ["dep:async-openai"]
 
 [[bin]]
 name = "llm-dash"
 path = "src/main.rs"
+required-features = ["cli"]
 
 [lib]
 name = "llm_cost_dashboard"
 path = "src/lib.rs"
 
 [dependencies]
-# ratatui: terminal UI framework
-ratatui = "0.29"
-# crossterm: cross-platform terminal manipulation
-crossterm = "0.28"
-# tokio: async runtime
-tokio = { version = "1", features = ["full"] }
-# thiserror: zero-cost error derive
+# Always on: the ledger, pricing, log parsing, forecasting and exports.
 thiserror = "2"
-# serde: serialization for log records
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# chrono: timestamps
 chrono = { version = "0.4", features = ["serde"] }
-# uuid: request IDs
 uuid = { version = "1", features = ["v4", "serde"] }
-# clap: CLI argument parsing
-clap = { version = ">=4.0.0, <4.6.0", features = ["derive"] }
-# tracing: structured logging
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-# axum: HTTP API server for --serve mode
-axum = "0.7"
-# reqwest: HTTP client for webhook alerts (enabled via "webhooks" feature)
-reqwest = { version = "0.12", features = ["json", "blocking"], default-features = false, optional = true }
-# csv: CSV serialization for export
 csv = "1"
-# toml: alert rules file parsing
-toml = "0.8"
-# dashmap: concurrent hash map used by dashboard_metrics
 dashmap = "5"
+tokio = { version = "1", features = ["rt", "sync", "time", "macros"] }
+# HMAC-SHA256 webhook signatures (RustCrypto, pure Rust).
+hmac = "0.12"
+sha2 = "0.10"
+
+# tui
+ratatui = { version = "0.29", optional = true }
+crossterm = { version = "0.28", optional = true }
+# server
+axum = { version = "0.7", optional = true }
+# webhooks
+reqwest = { version = "0.12", features = ["json", "blocking", "rustls-tls"], default-features = false, optional = true }
+# cli
+clap = { version = ">=4.0.0, <4.6.0", features = ["derive"], optional = true }
+clap_complete = { version = ">=4.5.0, <4.6.0", optional = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
+toml = { version = "0.8", optional = true }
+# async-openai interop (types only)
+async-openai = { version = "0.42", default-features = false, features = ["chat-completion-types"], optional = true }
 
 [dev-dependencies]
 tokio-test = "0.4"
+tokio = { version = "1", features = ["io-util", "net", "rt-multi-thread", "macros"] }
 # serde_json available in integration tests without re-declaring it as a dep
 serde_json = "1"
 # tempfile: temporary files in tests
@@ -76,9 +92,19 @@ tempfile = "3"
 criterion = { version = "0.5", features = ["html_reports"] }
 # proptest: property-based testing
 proptest = "1"
+# Cross-check tests and benchmarks against an independent pricing crate.
+llm-cost-cap = "0.1"
+
+[[example]]
+name = "metrics_server"
+required-features = ["server"]
 
 [[bench]]
 name = "cost_bench"
+harness = false
+
+[[bench]]
+name = "vs_competitors"
 harness = false
 
 [profile.release]

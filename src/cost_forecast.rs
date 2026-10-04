@@ -101,7 +101,9 @@ pub enum ForecastModel {
         /// Smoothing factor (0–1).
         alpha: f64,
     },
-    /// ARIMA (p,d,q) — currently delegates to linear extrapolation.
+    /// Not ARIMA: this variant runs linear extrapolation and ignores
+    /// `p`, `d` and `q`.
+    #[deprecated(since = "1.3.0", note = "not implemented; runs linear extrapolation")]
     ARIMA {
         /// Auto-regressive order.
         p: usize,
@@ -379,6 +381,7 @@ impl CostForecaster {
     /// The first forecast period starts immediately after the last observation,
     /// anchored at Unix epoch 0 for pure relative indexing when a real timestamp
     /// is unavailable.
+    #[allow(deprecated)]
     pub fn forecast(
         &self,
         historical: &[f64],
@@ -597,7 +600,7 @@ mod tests {
 
     #[test]
     fn forecast_returns_horizon_points() {
-        let fc = CostForecaster::default();
+        let fc = CostForecaster;
         let data = simple_data();
         let model = CostForecaster::best_model(&data);
         let points = fc.forecast(&data, &model, 7, ForecastPeriod::Daily);

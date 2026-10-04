@@ -5,6 +5,95 @@ All notable changes to `llm-cost-dashboard` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-10-04
+
+### Fixed
+
+- **`--forecast` no longer collapses to $0 on sparse logs.** The smoother ran on
+  the spend rate between each pair of consecutive requests and extrapolated an
+  undamped trend hundreds of steps ahead, so a small downward trend (quiet
+  nights, gaps between bursts) drove every horizon past the next hour below
+  zero, clamped to $0. On the 40-call, 3.25-day fixture used by the
+  `llm-spend-check` CI component it printed "Next month: $0.00"; with the
+  same prices it now prints $7.58 (the plain average rate gives $8.69), and
+  $8.62 with the corrected prices below (average rate $9.95). The same
+  method overshot dense logs: on the demo data it said $44.33 a month where
+  the average rate is $2.77; it now says $3.49. The log is now put on a regular
+  grid (about a day per bucket for 3+ days of data, an hour for 3+ hours),
+  empty buckets count as zero spend, and Holt's method runs with a damped trend
+  (0.9), summed per bucket over each horizon. Output format is unchanged.
+  A property test checks every horizon is finite, non-negative and
+  non-decreasing on random logs.
+- **`llm-dash` panicked when a webhook threshold was reached** ("there is no
+  reactor running"): alerts were sent with `tokio::spawn` outside any runtime.
+  They now go out on a background thread, once per threshold crossing (before,
+  every later request would have posted again).
+- **Wrong prices corrected** (checked against Anthropic's and OpenAI's price
+  lists and LiteLLM's table): `claude-haiku-4-5` $1 / $5 per million tokens
+  (was $0.25 / $1.25, the Claude 3 Haiku price), `claude-opus-4-6` $5 / $25
+  (was $15 / $75), `gpt-4o` $2.50 / $10 (was $5 / $15), `o3` $2 / $8 (was
+  $10 / $40), `gemini-1.5-pro` $1.25 / $5 (was $3.50 / $10.50),
+  `deepseek-chat` $0.28 / $0.42 (was $0.27 / $1.10).
+- **Webhook signatures were forgeable.** `integration_webhooks::WebhookPayload::sign`
+  XOR-folded FNV hashes, which is not a MAC. It is now HMAC-SHA256
+  (`sha256=<hex>`, RFC 4231 test vectors in the tests). The alert engine's
+  hand-written SHA-256 was replaced by the RustCrypto `hmac` and `sha2` crates.
+- **`--serve` showed a snapshot.** Lines the dashboard tailed after start-up
+  never reached the HTTP API; they are now priced into the shared ledger too
+  (`api::mirror_feed`).
+- **`--serve` listened on every network interface**; it now binds 127.0.0.1
+  unless you pass `--bind 0.0.0.0`.
+- The over-budget warning was logged once per request after the breach (2,889
+  identical lines on one real log); it is logged once.
+- `cargo binstall` metadata pointed at GitHub-style release URLs; it now uses
+  the GitLab release downloads for Linux x86_64 and Windows x86_64 (checked
+  with a binstall dry run against 1.2.3).
+- `--alerts` help said it started a background check loop; it checks once.
+
+### Added
+
+- **`ingest::Ingester`**: the library path from log lines to priced records,
+  with counts of recorded, skipped and unreadable lines.
+- **Log formats:** saved OpenAI and Anthropic responses (`prompt_tokens` /
+  `completion_tokens`, nested `usage`, `created` as timestamp; OpenAI
+  `cached_tokens` are split out and priced at the cached rate) and **Claude
+  Code session logs** (each request counted once although Claude Code repeats
+  it per content block; 1-hour cache writes priced at 2x input). On a real
+  15,639-line session log it found the same 2,889 requests as an independent
+  Python count. `latency_ms` is optional.
+- **Prices:** 104 models (Claude 5 family, GPT-5, GPT-4.1, Gemini 2.5 Flash
+  added), published cached-input rates, dated ids fall back to the undated
+  price, run-time overrides with `cost::pricing::set_price` and
+  `load_prices_json` / `llm-dash --prices FILE` (LiteLLM's
+  `model_prices_and_context_window.json` loads 3,680 models). One-shot reports
+  list models that were priced with the fallback guess.
+- **Prometheus `/metrics`** in `--serve` mode and `api::router` /
+  `api::serve_on` / `api::prometheus_text` for your own axum app.
+- **`async-openai` feature**: `interop::async_openai::record_from_response`.
+- **`llm-dash --completions <shell>`** (clap_complete).
+- Examples: `quickstart`, `claude_code_spend`, `budget_check`, `metrics_server`.
+- Cross-check test against llm-cost-cap's price table, property tests
+  (proptest) for log parsing, price files and the forecaster, and a criterion
+  benchmark against llm-cost-cap (`benches/vs_competitors.rs`).
+
+### Changed
+
+- **Lean library build:** the TUI (`tui`), HTTP server (`server`), webhooks
+  (`webhooks`) and CLI (`cli`) are features. Defaults are unchanged
+  (`cli` and `webhooks`), so `cargo install` and existing users get the same
+  binary; `default-features = false` drops ratatui, crossterm, axum, clap and
+  reqwest.
+- Price lookup uses a hash map built once: 61.6 ns to 24.2 ns per call.
+- `integration_webhooks::WebhookManager::simulate_delivery` / `process_pending`
+  and `cost_forecast::ForecastModel::ARIMA` are deprecated: the first sends
+  nothing and decides success from a hash, the second is linear
+  extrapolation. Their docs now say so.
+- README is the crate documentation on docs.rs and every Rust block in it is
+  compiled as a doctest.
+- Minimum Rust version 1.88 (checked with `cargo +1.88.0 check`). GitLab CI
+  runs tests with all and with no default features, clippy `-D warnings`,
+  rustdoc `-D warnings`, and an MSRV check. The dead GitHub workflows are gone.
+
 ## [1.2.3] - 2026-09-30
 
 - Links point at GitLab.

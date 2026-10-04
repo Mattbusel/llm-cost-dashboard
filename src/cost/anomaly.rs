@@ -136,7 +136,7 @@ impl ModelStats {
 /// long-running processes.
 ///
 /// A new record must be checked via [`AnomalyDetector::check`] *before*
-/// calling [`AnomalyDetector::record`] so that the current observation is
+/// calling `AnomalyDetector::record` so that the current observation is
 /// compared against the historical baseline rather than itself.
 #[derive(Debug, Default)]
 pub struct AnomalyDetector {

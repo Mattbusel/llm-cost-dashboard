@@ -161,7 +161,7 @@ pub struct OrgTree {
 impl OrgTree {
     /// Create a new tree with only an org-level envelope.
     ///
-    /// Teams and projects must be added with [`add_team`] and [`add_project`].
+    /// Teams and projects must be added with [`Self::add_team`] and [`Self::add_project`].
     ///
     /// # Arguments
     ///

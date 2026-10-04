@@ -7,8 +7,8 @@ opening a pull request.
 
 ## Prerequisites
 
-- **Rust stable** (1.75 or later) — install via [rustup](https://rustup.rs/)
-- No external services required — the dashboard runs entirely in-process
+- **Rust stable** (1.88 or later): install via [rustup](https://rustup.rs/)
+- No external services required: the dashboard runs entirely in-process
 
 ---
 
@@ -72,7 +72,7 @@ To add a model:
   ```
 - **Doc comments**: every public item (function, struct, enum, field) must have
   a `///` doc comment. The crate uses `#![deny(missing_docs)]`.
-- **Error handling**: use `DashboardError` variants — do not `panic!` or
+- **Error handling**: use `DashboardError` variants: do not `panic!` or
   `unwrap()` outside of tests.
 
 ---
@@ -85,7 +85,8 @@ To add a model:
    ```
 2. Ensure `cargo fmt`, `cargo clippy -- -D warnings`, and `cargo test` all
    pass locally.
-3. Open a pull request against `main` with a clear description of the change.
+3. Open a merge request against `master` with a clear description of the change.
 
-CI enforces formatting, Clippy, the full test suite on Ubuntu/Windows/macOS,
-rustdoc with `-D warnings`, MSRV (1.75), and a security audit before merging.
+GitLab CI runs the test suite with all features and with no default
+features, Clippy and rustdoc with `-D warnings`, and an MSRV (1.88) check,
+on Linux.

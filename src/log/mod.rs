@@ -8,6 +8,8 @@
 //! [`crate::error::DashboardError::LogParseError`] and can choose to skip the
 //! bad line and continue.
 
+use std::collections::HashSet;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -160,7 +162,8 @@ pub struct IncomingRecord {
     pub input_tokens: u64,
     /// Number of output tokens.
     pub output_tokens: u64,
-    /// Request latency in milliseconds.
+    /// Request latency in milliseconds; 0 when the line has none.
+    #[serde(default)]
     pub latency_ms: u64,
     /// Optional provider name; defaults to `"unknown"` when absent.
     #[serde(default)]
@@ -169,8 +172,146 @@ pub struct IncomingRecord {
     #[serde(default)]
     pub error: Option<String>,
     /// Optional request time.  See the type-level docs for accepted formats.
-    #[serde(default, alias = "ts", alias = "time", alias = "created_at")]
+    #[serde(default, alias = "ts", alias = "time", alias = "created_at", alias = "created")]
     pub timestamp: Option<serde_json::Value>,
+}
+
+/// Prompt-cache token counts found on a log line (Anthropic's
+/// `cache_read_input_tokens` / `cache_creation_input_tokens`, with the
+/// 5-minute and 1-hour split Claude Code logs carry). All zero when the line
+/// has none.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct CacheTokens {
+    /// Tokens read from the prompt cache.
+    pub read: u64,
+    /// Tokens written to the 5-minute cache.
+    pub write_5m: u64,
+    /// Tokens written to the 1-hour cache.
+    pub write_1h: u64,
+}
+
+impl CacheTokens {
+    /// Whether every count is zero.
+    pub fn is_empty(&self) -> bool {
+        self.read == 0 && self.write_5m == 0 && self.write_1h == 0
+    }
+}
+
+/// Read prompt-cache counts from a (normalized) log line: top-level
+/// `cache_read_tokens` / `cache_write_tokens`, or a `usage` object with
+/// Anthropic's field names. A `cache_creation` breakdown, when present,
+/// splits writes into 5-minute and 1-hour; otherwise all writes count as
+/// 5-minute.
+pub fn cache_tokens(value: &serde_json::Value) -> CacheTokens {
+    let n = |v: Option<&serde_json::Value>| v.and_then(serde_json::Value::as_u64).unwrap_or(0);
+    let usage = value.get("usage");
+    let from = |top: &str, nested: &str| {
+        value
+            .get(top)
+            .or_else(|| usage.and_then(|u| u.get(nested)))
+    };
+    let read = n(from("cache_read_tokens", "cache_read_input_tokens"));
+    let write_total = n(from("cache_write_tokens", "cache_creation_input_tokens"));
+    let split = usage.and_then(|u| u.get("cache_creation"));
+    let (w5, w1) = match split {
+        Some(c) => {
+            let w5 = n(c.get("ephemeral_5m_input_tokens"));
+            let w1 = n(c.get("ephemeral_1h_input_tokens"));
+            if w5 + w1 == 0 {
+                (write_total, 0)
+            } else {
+                (w5, w1)
+            }
+        }
+        None => (write_total, 0),
+    };
+    CacheTokens {
+        read,
+        write_5m: w5,
+        write_1h: w1,
+    }
+}
+
+/// Whether a line comes from a Claude Code session log
+/// (`~/.claude/projects/**/*.jsonl`).
+fn is_claude_code_line(obj: &serde_json::Map<String, serde_json::Value>) -> bool {
+    obj.contains_key("sessionId")
+        || obj.contains_key("parentUuid")
+        || obj
+            .get("type")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|t| {
+                // Bookkeeping records Claude Code writes without a session id.
+                t.starts_with("file-history") || t == "summary" || t == "fork-context-ref"
+            })
+}
+
+/// Fill `input_tokens` / `output_tokens` from the field names that API
+/// responses and logging libraries use, so a saved OpenAI or Anthropic
+/// response can be logged as-is:
+///
+/// - `prompt_tokens` / `completion_tokens` (OpenAI and compatible servers),
+/// - a nested `usage` object with either pair (OpenAI `usage.prompt_tokens`,
+///   Anthropic `usage.input_tokens`),
+/// - a nested `message` object carrying `model` and `usage` (Claude Code
+///   session logs); its `model` and `usage` are lifted to the top level.
+///
+/// Top-level fields always win. Non-objects are returned unchanged.
+pub fn normalize_usage(mut value: serde_json::Value) -> serde_json::Value {
+    let Some(obj) = value.as_object_mut() else {
+        return value;
+    };
+    if let Some(msg) = obj.get("message").and_then(|m| m.as_object()).cloned() {
+        for key in ["model", "usage"] {
+            if !obj.contains_key(key) {
+                if let Some(v) = msg.get(key) {
+                    obj.insert(key.to_string(), v.clone());
+                }
+            }
+        }
+    }
+    let usage = obj.get("usage").and_then(|u| u.as_object()).cloned();
+    // OpenAI counts cached prompt tokens inside prompt_tokens and reports
+    // them again in prompt_tokens_details.cached_tokens. Split them out so
+    // they are priced at the cached rate, not twice or at the full rate.
+    let openai_cached = usage
+        .as_ref()
+        .and_then(|u| u.get("prompt_tokens_details"))
+        .and_then(|d| d.get("cached_tokens"))
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
+    if openai_cached > 0 && !obj.contains_key("input_tokens") && !obj.contains_key("cache_read_tokens") {
+        let prompt = obj
+            .get("prompt_tokens")
+            .or_else(|| usage.as_ref().and_then(|u| u.get("prompt_tokens")))
+            .and_then(serde_json::Value::as_u64);
+        if let Some(p) = prompt {
+            let cached = openai_cached.min(p);
+            obj.insert("input_tokens".into(), (p - cached).into());
+            obj.insert("cache_read_tokens".into(), cached.into());
+        }
+    }
+    for (target, aliases) in [
+        ("input_tokens", ["prompt_tokens", "input_tokens"]),
+        ("output_tokens", ["completion_tokens", "output_tokens"]),
+    ] {
+        if obj.contains_key(target) {
+            continue;
+        }
+        let found = aliases
+            .iter()
+            .find_map(|a| obj.get(*a).cloned())
+            .or_else(|| {
+                usage
+                    .as_ref()
+                    .and_then(|u| aliases.iter().find_map(|a| u.get(*a).cloned()))
+            });
+        if let Some(v) = found {
+            obj.insert(target.to_string(), v);
+        }
+    }
+    value
 }
 
 /// Parse a log-line timestamp value into UTC.
@@ -238,6 +379,9 @@ impl From<IncomingRecord> for LogEntry {
 #[derive(Debug, Default)]
 pub struct RequestLog {
     entries: Vec<LogEntry>,
+    /// Request ids already ingested, for logs that repeat one request on
+    /// several lines (Claude Code writes one line per content block).
+    seen: HashSet<String>,
 }
 
 impl RequestLog {
@@ -256,15 +400,56 @@ impl RequestLog {
     /// Returns [`DashboardError::LogParseError`] on malformed input so the
     /// caller can surface the error in the UI rather than panicking.
     pub fn ingest_line(&mut self, line: &str) -> Result<(), DashboardError> {
+        self.ingest_line_detailed(line).map(|_| ())
+    }
+
+    /// Like [`RequestLog::ingest_line`], but says what happened:
+    /// `Ok(Some(cache))` when an entry was appended (with the line's
+    /// prompt-cache counts), `Ok(None)` when the line was valid but skipped.
+    ///
+    /// Lines are skipped, not rejected, when they repeat a request already
+    /// ingested (same `message.id` and `requestId`, as Claude Code writes
+    /// one line per content block), and when a Claude Code session line
+    /// carries no usage (user turns, summaries, `<synthetic>` replies).
+    pub fn ingest_line_detailed(
+        &mut self,
+        line: &str,
+    ) -> Result<Option<CacheTokens>, DashboardError> {
         let value: serde_json::Value = serde_json::from_str(line.trim())
             .map_err(|e| DashboardError::LogParseError(e.to_string()))?;
         // Only JSON objects are valid records; serde would otherwise accept a
         // positional array such as `["gpt-4o", 100, 50, 20]`.
-        if !value.is_object() {
+        let Some(obj) = value.as_object() else {
             return Err(DashboardError::LogParseError(
                 "expected a JSON object per line".into(),
             ));
+        };
+        let claude_code = is_claude_code_line(obj);
+        let request_key = obj
+            .get("message")
+            .and_then(|m| m.get("id"))
+            .and_then(serde_json::Value::as_str)
+            .map(|id| {
+                let req = obj.get("requestId").and_then(serde_json::Value::as_str);
+                format!("{id}:{}", req.unwrap_or(""))
+            });
+        let mut value = normalize_usage(value);
+        if claude_code {
+            let no_usage = value.get("input_tokens").is_none();
+            let synthetic = value.get("model").and_then(serde_json::Value::as_str) == Some("<synthetic>");
+            if no_usage || synthetic {
+                return Ok(None);
+            }
+            if let Some(o) = value.as_object_mut() {
+                o.entry("provider").or_insert_with(|| "anthropic".into());
+            }
         }
+        if let Some(key) = &request_key {
+            if self.seen.contains(key) {
+                return Ok(None);
+            }
+        }
+        let cache = cache_tokens(&value);
         let record: IncomingRecord = serde_json::from_value(value)
             .map_err(|e| DashboardError::LogParseError(e.to_string()))?;
         if let Some(ts) = &record.timestamp {
@@ -274,8 +459,11 @@ impl RequestLog {
                 )));
             }
         }
+        if let Some(key) = request_key {
+            self.seen.insert(key);
+        }
         self.append(record.into());
-        Ok(())
+        Ok(Some(cache))
     }
 
     /// Iterate over entries whose model matches `model` (case-insensitive).
@@ -313,6 +501,7 @@ impl RequestLog {
     /// Remove all entries from the log.
     pub fn clear(&mut self) {
         self.entries.clear();
+        self.seen.clear();
     }
 }
 
@@ -399,6 +588,91 @@ mod tests {
     fn test_ingest_invalid_json_returns_error() {
         let mut log = RequestLog::new();
         assert!(log.ingest_line("not json").is_err());
+    }
+
+    #[test]
+    fn test_ingest_openai_and_anthropic_usage_shapes() {
+        let mut log = RequestLog::new();
+        // A saved OpenAI Chat Completions response.
+        log.ingest_line(
+            r#"{"model":"gpt-4o-mini","created":1790000000,"usage":{"prompt_tokens":12,"completion_tokens":7,"total_tokens":19}}"#,
+        )
+        .unwrap();
+        // A saved Anthropic Messages response.
+        log.ingest_line(
+            r#"{"model":"claude-haiku-4-5","usage":{"input_tokens":30,"output_tokens":9},"latency_ms":410}"#,
+        )
+        .unwrap();
+        // Flat OpenAI names.
+        log.ingest_line(r#"{"model":"gpt-4o","prompt_tokens":5,"completion_tokens":2}"#)
+            .unwrap();
+        let e = log.all();
+        assert_eq!((e[0].input_tokens, e[0].output_tokens, e[0].latency_ms), (12, 7, 0));
+        assert_eq!(e[0].timestamp.timestamp(), 1_790_000_000);
+        assert_eq!((e[1].input_tokens, e[1].output_tokens, e[1].latency_ms), (30, 9, 410));
+        assert_eq!((e[2].input_tokens, e[2].output_tokens), (5, 2));
+    }
+
+    /// Shape of real Claude Code session lines (values made up).
+    const CC_ASSISTANT: &str = r#"{"parentUuid":"a","sessionId":"s1","type":"assistant","requestId":"req_1","timestamp":"2026-10-02T17:56:17.770Z","message":{"id":"msg_1","model":"claude-sonnet-4-5-20250929","usage":{"input_tokens":2,"cache_creation_input_tokens":1000,"cache_read_input_tokens":30000,"output_tokens":360,"cache_creation":{"ephemeral_1h_input_tokens":1000,"ephemeral_5m_input_tokens":0}}}}"#;
+
+    #[test]
+    fn test_claude_code_lines() {
+        let mut log = RequestLog::new();
+        let c = log.ingest_line_detailed(CC_ASSISTANT).unwrap().unwrap();
+        assert_eq!(c, CacheTokens { read: 30000, write_5m: 0, write_1h: 1000 });
+        let e = &log.all()[0];
+        assert_eq!(e.model, "claude-sonnet-4-5-20250929");
+        assert_eq!(e.provider, "anthropic");
+        assert_eq!((e.input_tokens, e.output_tokens), (2, 360));
+        assert_eq!(e.timestamp.to_rfc3339(), "2026-10-02T17:56:17.770+00:00");
+        // The same request repeated on another line (next content block) is skipped.
+        assert_eq!(log.ingest_line_detailed(CC_ASSISTANT).unwrap(), None);
+        // User turns and synthetic replies carry no billable usage: skipped, not errors.
+        let user = r#"{"parentUuid":"a","sessionId":"s1","type":"user","message":{"role":"user","content":"hi"}}"#;
+        assert_eq!(log.ingest_line_detailed(user).unwrap(), None);
+        // Bookkeeping lines without a session id are skipped too.
+        let snap = r#"{"type":"file-history-snapshot","messageId":"x","snapshot":{}}"#;
+        assert_eq!(log.ingest_line_detailed(snap).unwrap(), None);
+        let synthetic = r#"{"sessionId":"s1","type":"assistant","message":{"id":"m9","model":"<synthetic>","usage":{"input_tokens":0,"output_tokens":0}}}"#;
+        assert_eq!(log.ingest_line_detailed(synthetic).unwrap(), None);
+        assert_eq!(log.len(), 1);
+        // A plain log line with no usage is still an error.
+        assert!(log.ingest_line(r#"{"model":"gpt-4o"}"#).is_err());
+        log.clear();
+        assert!(log.ingest_line_detailed(CC_ASSISTANT).unwrap().is_some());
+    }
+
+    #[test]
+    fn test_openai_cached_tokens_are_split_out() {
+        let mut log = RequestLog::new();
+        let line = r#"{"model":"gpt-4o","usage":{"prompt_tokens":1000,"completion_tokens":10,"prompt_tokens_details":{"cached_tokens":800}}}"#;
+        let c = log.ingest_line_detailed(line).unwrap().unwrap();
+        assert_eq!(log.all()[0].input_tokens, 200);
+        assert_eq!(c.read, 800);
+    }
+
+    #[test]
+    fn test_cache_tokens_shapes() {
+        let v: serde_json::Value = serde_json::from_str(
+            r#"{"usage":{"cache_read_input_tokens":5,"cache_creation_input_tokens":7}}"#,
+        )
+        .unwrap();
+        assert_eq!(cache_tokens(&v), CacheTokens { read: 5, write_5m: 7, write_1h: 0 });
+        let v: serde_json::Value =
+            serde_json::from_str(r#"{"cache_read_tokens":1,"cache_write_tokens":2}"#).unwrap();
+        assert_eq!(cache_tokens(&v), CacheTokens { read: 1, write_5m: 2, write_1h: 0 });
+        assert!(cache_tokens(&serde_json::json!({})).is_empty());
+    }
+
+    #[test]
+    fn test_top_level_token_fields_win_over_usage() {
+        let mut log = RequestLog::new();
+        log.ingest_line(
+            r#"{"model":"m","input_tokens":1,"output_tokens":2,"latency_ms":3,"usage":{"prompt_tokens":9,"completion_tokens":9}}"#,
+        )
+        .unwrap();
+        assert_eq!((log.all()[0].input_tokens, log.all()[0].output_tokens), (1, 2));
     }
 
     #[test]

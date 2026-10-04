@@ -1,5 +1,9 @@
 //! Webhook Event System with Delivery Tracking
 //!
+//! **Delivery here is simulated** (no HTTP request is made); the event types,
+//! subscriptions and HMAC-SHA256 signing are real. For real delivery use
+//! [`crate::webhook`] or [`crate::alerting`].
+//!
 //! Implements a full-featured webhook event pipeline:
 //!
 //! - [`WebhookEvent`] variants for cost/SLA/budget/anomaly events
@@ -110,51 +114,24 @@ impl WebhookPayload {
         }
     }
 
-    /// Compute an FNV-1a-based HMAC-like signature.
+    /// HMAC-SHA256 of `payload` keyed with `secret`, as `sha256=<hex>`
+    /// (the GitHub / Stripe style header value).
     ///
-    /// The key is split into 8-byte blocks; each block is XOR-folded with the
-    /// FNV-1a hash of the payload, then all block hashes are XOR-combined.
-    /// This is intentionally simple (no crypto library dependency); production
-    /// code should replace this with HMAC-SHA256.
+    /// Before 1.3.0 this returned `fnv1a=<hex>` from an XOR-folded FNV hash,
+    /// which is not a MAC: anyone could forge it without the secret.
     pub fn sign(payload: &str, secret: &str) -> String {
-        const FNV_OFFSET: u64 = 14_695_981_039_346_656_037;
-        const FNV_PRIME: u64 = 1_099_511_628_211;
-
-        // FNV-1a of the payload.
-        let payload_hash: u64 = payload
-            .bytes()
-            .fold(FNV_OFFSET, |acc, b| (acc ^ b as u64).wrapping_mul(FNV_PRIME));
-
-        // Split secret into 8-byte blocks and XOR-fold with payload hash.
-        let secret_bytes = secret.as_bytes();
-        let block_size = 8usize;
-        let mut combined: u64 = 0;
-
-        let blocks = if secret_bytes.is_empty() {
-            1
-        } else {
-            secret_bytes.len().div_ceil(block_size)
+        use hmac::{Hmac, Mac};
+        let Ok(mut mac) = <Hmac<sha2::Sha256> as Mac>::new_from_slice(secret.as_bytes()) else {
+            return String::new();
         };
-
-        for block_idx in 0..blocks {
-            let start = block_idx * block_size;
-            let end = (start + block_size).min(secret_bytes.len());
-            let block = if start < secret_bytes.len() {
-                &secret_bytes[start..end]
-            } else {
-                &[]
-            };
-
-            // FNV-1a of the block XOR'd with the payload hash.
-            let block_hash: u64 = block
-                .iter()
-                .fold(FNV_OFFSET ^ payload_hash, |acc, &b| {
-                    (acc ^ b as u64).wrapping_mul(FNV_PRIME)
-                });
-            combined ^= block_hash;
-        }
-
-        format!("fnv1a={:016x}", combined)
+        mac.update(payload.as_bytes());
+        let hex: String = mac
+            .finalize()
+            .into_bytes()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        format!("sha256={hex}")
     }
 }
 
@@ -344,9 +321,17 @@ impl WebhookManager {
 
     /// Simulate HTTP delivery for `delivery`, recording up to 3 attempts.
     ///
+    /// **No request is sent.** Success or failure is a hash of the
+    /// subscription id; use [`crate::webhook::fire_budget_alert`] for real
+    /// delivery.
+    ///
     /// Delivery success is determined by a deterministic pseudo-random function
     /// of the subscription ID and attempt number (no actual HTTP is performed).
     /// In a production implementation this would perform real HTTP POST requests.
+    #[deprecated(
+        since = "1.3.0",
+        note = "sends nothing; success is a hash of the subscription id. Use webhook::fire_budget_alert for real delivery"
+    )]
     pub fn simulate_delivery(&self, delivery: &mut WebhookDelivery) {
         const MAX_ATTEMPTS: u32 = 3;
 
@@ -438,6 +423,9 @@ impl WebhookManager {
     /// Drain and process all pending deliveries in the queue.
     ///
     /// Useful for a background processing task or test helpers.
+    ///
+    /// **Simulated:** see [`WebhookManager::simulate_delivery`]; nothing is sent.
+    #[deprecated(since = "1.3.0", note = "simulated delivery; nothing is sent")]
     pub fn process_pending(&self) {
         let pending: Vec<WebhookDelivery> = {
             let mut queue = self.delivery_queue.lock().unwrap_or_else(|e| e.into_inner());
@@ -449,6 +437,7 @@ impl WebhookManager {
         };
 
         for mut delivery in pending {
+            #[allow(deprecated)]
             self.simulate_delivery(&mut delivery);
             // Re-enqueue completed deliveries for audit trail.
             let mut queue = self.delivery_queue.lock().unwrap_or_else(|e| e.into_inner());
@@ -500,7 +489,12 @@ mod tests {
         let s1 = WebhookPayload::sign("payload", "secret");
         let s2 = WebhookPayload::sign("payload", "secret");
         assert_eq!(s1, s2);
-        assert!(s1.starts_with("fnv1a="));
+        assert!(s1.starts_with("sha256="));
+        // RFC 4231 test case 2.
+        assert_eq!(
+            WebhookPayload::sign("what do ya want for nothing?", "Jefe"),
+            "sha256=5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
+        );
     }
 
     #[test]
@@ -539,6 +533,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn simulate_delivery_updates_stats() {
         let mgr = WebhookManager::new();
         mgr.subscribe("https://example.com", "s", vec![]);

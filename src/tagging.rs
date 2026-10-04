@@ -12,7 +12,7 @@
 //! - What fraction of the monthly bill belongs to the production environment?
 //! - Which team is over their per-sprint LLM budget?
 //!
-//! Tagging solves this by attaching key-value labels to each [`CostRecord`]
+//! Tagging solves this by attaching key-value labels to each [`CostRecord`](crate::cost::CostRecord)
 //! as it is ingested and providing a roll-up engine that aggregates cost by
 //! any tag dimension.
 //!

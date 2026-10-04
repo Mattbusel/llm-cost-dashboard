@@ -216,7 +216,7 @@ impl CostOptimizer {
     }
 
     /// Generate a [`CostSavingsReport`] comparing `baseline_model_id` against
-    /// the model that [`select_model`] would choose.
+    /// the model that [`Self::select_model`] would choose.
     ///
     /// Returns `None` if either the baseline model is unknown or no optimised
     /// model can be selected under the given constraints.

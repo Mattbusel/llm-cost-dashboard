@@ -305,6 +305,7 @@ impl WebhookAlerter {
 /// Non-webhook version of the alerter used when the `webhooks` feature is
 /// disabled.  All `fire` calls are no-ops.
 #[cfg(not(feature = "webhooks"))]
+#[allow(dead_code)]
 pub struct WebhookAlerter {
     _webhooks: Vec<String>,
     cooldown: HashMap<String, Instant>,

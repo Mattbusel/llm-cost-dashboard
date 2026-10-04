@@ -111,14 +111,14 @@ mod tests {
     #[test]
     fn poll_picks_up_appends_and_partial_lines() {
         let mut f = tempfile::NamedTempFile::new().unwrap();
-        write!(f, "one\n").unwrap();
+        writeln!(f, "one").unwrap();
         let (_, mut off) = read_complete_lines(f.path()).unwrap();
         let mut pending = Vec::new();
         assert!(poll_once(f.path(), &mut off, &mut pending).unwrap().is_empty());
         write!(f, "two\nthr").unwrap();
         f.flush().unwrap();
         assert_eq!(poll_once(f.path(), &mut off, &mut pending).unwrap(), vec!["two"]);
-        write!(f, "ee\n").unwrap();
+        writeln!(f, "ee").unwrap();
         f.flush().unwrap();
         assert_eq!(poll_once(f.path(), &mut off, &mut pending).unwrap(), vec!["three"]);
     }

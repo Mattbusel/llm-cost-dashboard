@@ -483,7 +483,7 @@ mod tests {
     #[test]
     fn seasonality_empty_all_zeros() {
         let report = TrendAnalyzer::seasonality(&[]);
-        for (_, avg) in &report.day_averages {
+        for avg in report.day_averages.values() {
             assert!((avg - 0.0).abs() < f64::EPSILON);
         }
     }

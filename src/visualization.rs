@@ -501,7 +501,6 @@ mod tests {
     #[test]
     fn histogram_bucket_count() {
         let values: Vec<f64> = (0..100).map(|i| i as f64).collect();
-        let hist = Histogram::new(5);
         let buckets = Histogram::compute_buckets(&values, 5);
         assert_eq!(buckets.len(), 5, "should produce exactly 5 buckets");
         let total: usize = buckets.iter().map(|b| b.2).sum();

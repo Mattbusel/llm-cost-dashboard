@@ -473,6 +473,6 @@ mod tests {
 
     #[test]
     fn default_impl_works() {
-        let _ = CostAllocator::default();
+        let _ = CostAllocator;
     }
 }

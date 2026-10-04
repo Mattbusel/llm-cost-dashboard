@@ -49,6 +49,10 @@ pub struct App {
     pub running: bool,
     /// Optional webhook configurations for budget alerts.
     pub webhooks: Vec<WebhookConfig>,
+    /// Whether each webhook has fired since the last reset (parallel to `webhooks`).
+    webhook_fired: Vec<bool>,
+    /// Whether the over-budget warning was logged since the last reset.
+    over_budget_logged: bool,
     /// Last export status message (shown briefly in the title bar).
     pub last_export_status: Option<String>,
     /// Active session name.  When set, all newly ingested records are tagged
@@ -77,6 +81,8 @@ impl App {
             scroll_offset: 0,
             running: true,
             webhooks: Vec::new(),
+            webhook_fired: Vec::new(),
+            over_budget_logged: false,
             last_export_status: None,
             current_session: None,
             anomaly_detector: AnomalyDetector::new(),
@@ -103,6 +109,7 @@ impl App {
     /// Register a webhook configuration for budget-threshold alerts.
     pub fn add_webhook(&mut self, cfg: WebhookConfig) {
         self.webhooks.push(cfg);
+        self.webhook_fired.push(false);
     }
 
     /// Inject a cost record and update the budget envelope.
@@ -135,20 +142,26 @@ impl App {
             warn!(error = %e, "cost ledger rejected record");
         }
         if let Err(e) = self.budget.spend(cost) {
-            warn!(model = %model, error = %e, "budget limit breached");
+            // Log the breach once, not once per request after it.
+            if !self.over_budget_logged {
+                self.over_budget_logged = true;
+                warn!(model = %model, error = %e, "budget limit breached");
+            }
         }
         debug!(model = %model, cost_usd = cost, "record ingested");
 
-        // Fire webhook alerts synchronously (best-effort).
+        // Fire each webhook once when spend first reaches its threshold, on a
+        // background thread. Before 1.3.0 this called tokio::spawn outside any
+        // runtime, so llm-dash panicked as soon as a webhook threshold was
+        // reached, and it would have posted again for every later request.
         let spent = self.budget.spent_usd;
         let limit = self.budget.limit_usd;
-        for cfg in &self.webhooks {
-            if spent >= cfg.threshold_usd {
-                let cfg_clone = cfg.clone();
-                tokio::spawn(async move {
-                    if let Err(e) =
-                        crate::webhook::fire_budget_alert(&cfg_clone, spent, limit).await
-                    {
+        for (cfg, fired) in self.webhooks.iter().zip(self.webhook_fired.iter_mut()) {
+            if !*fired && spent >= cfg.threshold_usd {
+                *fired = true;
+                let cfg = cfg.clone();
+                std::thread::spawn(move || {
+                    if let Err(e) = crate::webhook::fire_budget_alert_blocking(&cfg, spent, limit) {
                         tracing::warn!(error = %e, "webhook alert delivery failed");
                     }
                 });
@@ -218,17 +231,13 @@ impl App {
     /// dashboard remains in a valid state and the caller may skip or surface
     /// the error.
     pub fn ingest_line(&mut self, line: &str) -> Result<(), DashboardError> {
-        self.log.ingest_line(line)?;
+        let Some(cache) = self.log.ingest_line_detailed(line)? else {
+            // A valid line that is not a new request (a repeat or a
+            // non-billable Claude Code line).
+            return Ok(());
+        };
         if let Some(last) = self.log.all().last() {
-            let mut rec = CostRecord::new(
-                &last.model,
-                &last.provider,
-                last.input_tokens,
-                last.output_tokens,
-                last.latency_ms,
-            );
-            // Keep the request time from the log line (or its read time).
-            rec.timestamp = last.timestamp;
+            let mut rec = crate::ingest::record_for(last, cache);
             // Tag the record with the active session if one is set.
             if let Some(ref session) = self.current_session {
                 rec = rec.with_session(session.clone());
@@ -292,6 +301,8 @@ impl App {
         self.ledger.clear();
         self.log.clear();
         self.budget.reset();
+        self.webhook_fired.iter_mut().for_each(|f| *f = false);
+        self.over_budget_logged = false;
         self.scroll_offset = 0;
         self.last_export_status = None;
         self.anomaly_detector.reset();
@@ -469,4 +480,41 @@ fn event_loop(
     }
     info!("event loop finished");
     Ok(())
+}
+
+#[cfg(test)]
+mod webhook_tests {
+    use super::*;
+    /// A webhook fires once when its threshold is reached, from a plain
+    /// thread (1.2.x panicked here: tokio::spawn outside a runtime).
+    #[cfg(feature = "webhooks")]
+    #[test]
+    fn webhook_fires_once_without_a_runtime() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                let mut stream = stream;
+                stream.set_read_timeout(Some(std::time::Duration::from_secs(2))).ok();
+                let mut buf = [0u8; 4096];
+                let n = stream.read(&mut buf).unwrap_or(0);
+                tx.send(String::from_utf8_lossy(&buf[..n]).into_owned()).ok();
+                let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+            }
+        });
+        let mut app = App::new(10.0);
+        app.add_webhook(WebhookConfig {
+            url: format!("http://127.0.0.1:{port}/hook"),
+            format: crate::webhook::WebhookFormat::Generic,
+            threshold_usd: 0.0,
+        });
+        for _ in 0..5 {
+            app.record(CostRecord::new("gpt-4o", "openai", 1000, 100, 5));
+        }
+        let first = rx.recv_timeout(std::time::Duration::from_secs(10)).unwrap();
+        assert!(first.starts_with("POST /hook"), "{first}");
+        assert!(rx.recv_timeout(std::time::Duration::from_millis(1500)).is_err(), "fired twice");
+    }
 }

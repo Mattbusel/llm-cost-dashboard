@@ -514,6 +514,6 @@ mod tests {
         // alice is active within 1 day, bob is not (only ts=0 events exist for both)
         // Actually both have ts=0, so both are active in window day 0.
         let churn = analyzer.churn_rate(cohort, 1);
-        assert!(churn >= 0.0 && churn <= 1.0);
+        assert!((0.0..=1.0).contains(&churn));
     }
 }

@@ -366,10 +366,10 @@ mod tests {
         assert_eq!(proj.sample_count(), 100);
         // p50 ≈ 50 (within ±1 due to rounding)
         let p50 = proj.p50().unwrap();
-        assert!(p50 >= 49 && p50 <= 51, "p50={p50}");
+        assert!((49..=51).contains(&p50), "p50={p50}");
         // p99 ≈ 99
         let p99 = proj.p99().unwrap();
-        assert!(p99 >= 98 && p99 <= 100, "p99={p99}");
+        assert!((98..=100).contains(&p99), "p99={p99}");
     }
 
     #[tokio::test]

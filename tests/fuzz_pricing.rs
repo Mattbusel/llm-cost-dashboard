@@ -151,7 +151,7 @@ fn combined_cost_equals_sum_of_parts() {
 /// We spot-check a few known pairs from the pricing table.
 #[test]
 fn higher_output_rate_model_costs_more() {
-    // claude-opus-4-6 output: $75.00/1M vs claude-haiku-4-5 output: $1.25/1M
+    // claude-opus-4-6 output: $25.00/1M vs claude-haiku-4-5 output: $5.00/1M
     let opus_cost = compute_cost("claude-opus-4-6", 0, 1_000_000);
     let haiku_cost = compute_cost("claude-haiku-4-5", 0, 1_000_000);
     assert!(

@@ -1,4 +1,6 @@
 //! Integration tests for malformed JSON ingestion in the log parser.
+#![cfg(feature = "tui")]
+
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 //!
 //! Every test here feeds broken or incomplete JSON to [`RequestLog::ingest_line`]
@@ -153,10 +155,13 @@ fn missing_output_tokens_field() {
     assert_parse_error(r#"{"model":"gpt-4o","input_tokens":100,"latency_ms":10}"#);
 }
 
-/// `latency_ms` field is absent.
+/// `latency_ms` is optional since 1.3.0 and defaults to 0.
 #[test]
-fn missing_latency_ms_field() {
-    assert_parse_error(r#"{"model":"gpt-4o","input_tokens":100,"output_tokens":50}"#);
+fn missing_latency_ms_field_defaults_to_zero() {
+    let mut log = RequestLog::new();
+    log.ingest_line(r#"{"model":"gpt-4o","input_tokens":100,"output_tokens":50}"#)
+        .unwrap();
+    assert_eq!(log.all()[0].latency_ms, 0);
 }
 
 /// All required fields are absent; only an unknown field is present.

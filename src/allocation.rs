@@ -1202,7 +1202,7 @@ mod tests {
     fn test_chargeback_csv_rows() {
         let mut a = CostAllocator::new();
         a.add_rule(make_rule("r1", "eng", "api", Some("e-"), None, Some(100.0)));
-        a.record("e-1", "gpt-4o-mini", 3.14, &empty_tags());
+        a.record("e-1", "gpt-4o-mini", 3.25, &empty_tags());
         let csv = a.chargeback_csv();
         assert!(csv.contains("eng"));
         assert!(csv.contains("api"));
@@ -1221,8 +1221,10 @@ mod tests {
 
     #[test]
     fn test_no_budget_utilization_none() {
-        let mut b = AllocationBucket::default();
-        b.total_cost_usd = 999.0;
+        let b = AllocationBucket {
+            total_cost_usd: 999.0,
+            ..Default::default()
+        };
         assert!(b.budget_utilization_pct().is_none());
         assert!(!b.is_over_budget());
     }

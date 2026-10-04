@@ -2,6 +2,8 @@
 //!
 //! These tests verify cross-module behaviour: demo mode producing real
 //! CostRecord entries and the pricing table covering all major models.
+#![cfg(feature = "tui")]
+
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::len_zero)]
 
 use llm_cost_dashboard::{
@@ -212,24 +214,24 @@ fn test_ingest_mixed_valid_invalid_lines() {
 
 // ── Cost calculation accuracy ────────────────────────────────────────────────
 
-/// Verify exact cost for claude-opus-4-6 input: $15.00/1M tokens.
+/// Verify exact cost for claude-opus-4-6 input: $5.00/1M tokens.
 #[test]
 fn test_cost_accuracy_claude_opus_input() {
     use llm_cost_dashboard::cost::pricing::compute_cost;
     let cost = compute_cost("claude-opus-4-6", 1_000_000, 0);
     assert!(
-        (cost - 15.00).abs() < 1e-9,
+        (cost - 5.00).abs() < 1e-9,
         "claude-opus-4-6 1M input cost: {cost}"
     );
 }
 
-/// Verify exact cost for claude-opus-4-6 output: $75.00/1M tokens.
+/// Verify exact cost for claude-opus-4-6 output: $25.00/1M tokens.
 #[test]
 fn test_cost_accuracy_claude_opus_output() {
     use llm_cost_dashboard::cost::pricing::compute_cost;
     let cost = compute_cost("claude-opus-4-6", 0, 1_000_000);
     assert!(
-        (cost - 75.00).abs() < 1e-9,
+        (cost - 25.00).abs() < 1e-9,
         "claude-opus-4-6 1M output cost: {cost}"
     );
 }
