@@ -5,6 +5,12 @@ All notable changes to `llm-cost-dashboard` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- `repository` now points at GitHub (GitLab stays as the mirror and hosts the release downloads, so the `cargo binstall` URLs name GitLab directly); `homepage` is the project site; keyword `pricing` replaced by `observability`.
+- README: the first example is a full `fn main` instead of a hidden doctest line that showed up literally on GitHub and crates.io.
+
 ## [1.3.0] - 2026-10-04
 
 ### Fixed

@@ -5,6 +5,7 @@ Price every LLM API call your app makes, from a plain log line or the provider's
 [![crates.io](https://img.shields.io/crates/v/llm-cost-dashboard.svg)](https://crates.io/crates/llm-cost-dashboard)
 [![docs.rs](https://docs.rs/llm-cost-dashboard/badge.svg)](https://docs.rs/llm-cost-dashboard)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://gitlab.com/mattbusel/llm-cost-dashboard/-/blob/master/LICENSE)
+![MSRV 1.88](https://img.shields.io/badge/MSRV-1.88-blue.svg)
 
 <p align="center">
   <img src="https://gitlab.com/mattbusel/llm-cost-dashboard/-/raw/master/assets/dashboard.gif" alt="llm-dash tailing a request log: new requests stream in, a 60,000-token gpt-4o call is flagged as a 26.7x cost anomaly, then the cost explorer sorts by price and opens that call" width="100%">
@@ -13,15 +14,17 @@ Price every LLM API call your app makes, from a plain log line or the provider's
 ```rust
 use llm_cost_dashboard::ingest::Ingester;
 
-let mut costs = Ingester::new();
-// Any mix of your own log lines and saved OpenAI / Anthropic responses.
-costs.ingest_line(r#"{"model":"gpt-4o-mini","input_tokens":5200,"output_tokens":400}"#)?;
-costs.ingest_line(r#"{"model":"claude-sonnet-4-6","usage":{"input_tokens":900,"output_tokens":350,"cache_read_input_tokens":40000}}"#)?;
-for (model, s) in costs.ledger().by_model() {
-    println!("{model}: ${:.6} over {} call(s)", s.total_cost_usd, s.request_count);
+fn main() -> Result<(), llm_cost_dashboard::DashboardError> {
+    let mut costs = Ingester::new();
+    // Any mix of your own log lines and saved OpenAI / Anthropic responses.
+    costs.ingest_line(r#"{"model":"gpt-4o-mini","input_tokens":5200,"output_tokens":400}"#)?;
+    costs.ingest_line(r#"{"model":"claude-sonnet-4-6","usage":{"input_tokens":900,"output_tokens":350,"cache_read_input_tokens":40000}}"#)?;
+    for (model, s) in costs.ledger().by_model() {
+        println!("{model}: ${:.6} over {} call(s)", s.total_cost_usd, s.request_count);
+    }
+    println!("total: ${:.6}", costs.ledger().total_usd()); // total: $0.020970
+    Ok(())
 }
-println!("total: ${:.6}", costs.ledger().total_usd()); // total: $0.020970
-# Ok::<(), llm_cost_dashboard::DashboardError>(())
 ```
 
 (`cargo run --example quickstart` runs exactly this.)
@@ -720,3 +723,5 @@ RUST_LOG=debug cargo run -- --demo --compare
 ## License
 
 MIT, see [LICENSE](https://gitlab.com/mattbusel/llm-cost-dashboard/-/blob/master/LICENSE).
+
+Source, issues and stars: [GitHub](https://github.com/Mattbusel/llm-cost-dashboard). Mirror and release downloads: [GitLab](https://gitlab.com/mattbusel/llm-cost-dashboard). More open-source Rust from the same author: [tensorust.com/open-source](https://tensorust.com/open-source/).
