@@ -7,6 +7,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed
+- Claude prices: Sonnet 5.5 cache read is $0.10 per million tokens (0.05x input), not $0.20; added Claude Haiku 5.5 ($0.10 / $0.50, and $0.50 / $2.50 for the whole request when the prompt, cache tokens included, is over 100,000 tokens, via `price_for_prompt` and `LONG_PROMPT_RATES`). A test pins every Claude row to Anthropic's pricing page as of 2026-10-17.
+
 ### Changed
 - `repository` now points at GitHub (GitLab stays as the mirror and hosts the release downloads, so the `cargo binstall` URLs name GitLab directly); `homepage` is the project site; keyword `pricing` replaced by `observability`.
 - README: the first example is a full `fn main` instead of a hidden doctest line that showed up literally on GitHub and crates.io.

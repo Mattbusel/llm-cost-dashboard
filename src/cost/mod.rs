@@ -90,7 +90,9 @@ impl CostRecord {
     ) -> Self {
         let model = model.into();
         let provider = provider.into();
-        let (ir, or_) = pricing::lookup(&model);
+        let (ir, or_) = pricing::price_for_prompt(&model, input_tokens)
+            .map(|p| (p.input_per_1m, p.output_per_1m))
+            .unwrap_or(pricing::FALLBACK_PRICING);
         let input_cost = input_tokens as f64 * ir / 1_000_000.0;
         let output_cost = output_tokens as f64 * or_ / 1_000_000.0;
         Self {
@@ -131,15 +133,27 @@ impl CostRecord {
 
     /// Like [`CostRecord::with_cache`], with 1-hour cache writes priced
     /// separately (200% of the input rate, Anthropic's rate). Claude Code
-    /// logs report both kinds.
+    /// logs report both kinds. For a model priced by prompt length
+    /// (Claude Haiku 5.5), the whole request is repriced from the full
+    /// prompt: input plus cache reads and writes.
     pub fn with_cache_tiers(
         mut self,
         cache_read_tokens: u64,
         cache_write_5m_tokens: u64,
         cache_write_1h_tokens: u64,
     ) -> Self {
-        let (ir, or_) = pricing::lookup(&self.model);
-        let price = pricing::price_of(&self.model).unwrap_or(pricing::ModelPrice::new(ir, or_));
+        // Prompt length for tiered models (Claude Haiku 5.5) counts cache
+        // reads and writes as well as uncached input.
+        let prompt_tokens = self
+            .input_tokens
+            .saturating_add(cache_read_tokens)
+            .saturating_add(cache_write_5m_tokens)
+            .saturating_add(cache_write_1h_tokens);
+        let (fi, fo) = pricing::FALLBACK_PRICING;
+        let price = pricing::price_for_prompt(&self.model, prompt_tokens)
+            .unwrap_or(pricing::ModelPrice::new(fi, fo));
+        self.input_cost_usd = self.input_tokens as f64 * price.input_per_1m / 1_000_000.0;
+        self.output_cost_usd = self.output_tokens as f64 * price.output_per_1m / 1_000_000.0;
         let read_cost = cache_read_tokens as f64 * price.cache_read_rate() / 1_000_000.0;
         let write_cost = (cache_write_5m_tokens as f64 * price.cache_write_rate()
             + cache_write_1h_tokens as f64 * price.cache_write_1h_rate())
@@ -416,6 +430,18 @@ mod tests {
 
     fn make_record(model: &str, input: u64, output: u64, latency: u64) -> CostRecord {
         CostRecord::new(model, "test", input, output, latency)
+    }
+
+    #[test]
+    fn haiku_5_5_long_prompt_reprices_whole_request() {
+        // 1,000 uncached input + 1,000 output: short tier, $0.10 / $0.50.
+        let r = make_record("claude-haiku-5-5", 1_000, 1_000, 1);
+        assert!((r.total_cost_usd - (1_000.0 * 0.10 + 1_000.0 * 0.50) / 1e6).abs() < 1e-15);
+        // Adding 200,000 cache-read tokens pushes the prompt over 100,000:
+        // every token is billed at the higher tier ($0.50 / $2.50, hit $0.05).
+        let r = r.with_cache(200_000, 0);
+        let expected = (1_000.0 * 0.50 + 1_000.0 * 2.50 + 200_000.0 * 0.05) / 1e6;
+        assert!((r.total_cost_usd - expected).abs() < 1e-12, "{}", r.total_cost_usd);
     }
 
     #[test]

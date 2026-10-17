@@ -21,7 +21,7 @@ use tracing::{error, info, warn};
 
 Feed it a newline-delimited JSON log of your model calls (model, input_tokens,
 output_tokens, optional latency_ms and timestamp) and it prices every request from a
-built-in table of 104 models. Saved OpenAI or Anthropic responses work too: token
+built-in table of 105 models. Saved OpenAI or Anthropic responses work too: token
 counts are read from prompt_tokens/completion_tokens or a nested usage object.",
     after_help = "Examples:
   llm-dash --demo                                  try the dashboard with sample traffic

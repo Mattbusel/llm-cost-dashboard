@@ -25,15 +25,20 @@ use crate::error::DashboardError;
 /// Each tuple is `(model_id, input_usd_per_1m, output_usd_per_1m)`.
 /// Model IDs are matched case-insensitively by [`lookup`].
 ///
-/// Last updated: 2026-10-03
+/// Claude rows checked against <https://platform.claude.com/docs/en/about-claude/pricing>
+/// on 2026-10-17 (see `claude_prices_match_anthropic_pricing_page`).
+///
+/// Last updated: 2026-10-17
 pub const PRICING: &[(&str, f64, f64)] = &[
-    // ── Anthropic / Claude 5 family (Anthropic list prices, 2026-09) ────────
+    // ── Anthropic / Claude 5 family (Anthropic list prices, 2026-10-17) ─────
     ("claude-fable-5-1", 10.00, 50.00),
     ("claude-fable-5", 10.00, 50.00),
     ("claude-opus-5-5", 4.00, 20.00),
     ("claude-opus-5", 5.00, 25.00),
     ("claude-sonnet-5-5", 2.00, 10.00),
     ("claude-sonnet-5", 2.00, 10.00),
+    // Prompts up to 100,000 tokens; longer prompts: see LONG_PROMPT_RATES.
+    ("claude-haiku-5-5", 0.10, 0.50),
     // ── Anthropic — Claude 4 family ─────────────────────────────────────────
     ("claude-opus-4-8", 5.00, 25.00),
     ("claude-opus-4-7", 5.00, 25.00),
@@ -214,7 +219,7 @@ impl ModelPrice {
 pub const CACHE_READ_RATES: &[(&str, f64)] = &[
     ("claude-fable-5-1", 0.25),
     ("claude-opus-5-5", 0.20),
-    ("claude-sonnet-5-5", 0.20),
+    ("claude-sonnet-5-5", 0.10),
     ("gpt-4o", 1.25),
     ("gpt-4o-mini", 0.075),
     ("gpt-4.1", 0.50),
@@ -228,6 +233,46 @@ pub const CACHE_READ_RATES: &[(&str, f64)] = &[
     ("o3-mini", 0.55),
     ("o1", 7.50),
 ];
+
+/// Models whose whole request is billed at higher rates once its prompt is
+/// longer than a threshold: `(model, threshold_tokens, input_usd_per_1m,
+/// output_usd_per_1m)`. The prompt length counts every input token,
+/// including cache reads and writes, and cache rates scale from the higher
+/// input rate. Claude Haiku 5.5 pays $0.50 / $2.50 for prompts over 100,000
+/// tokens (Anthropic pricing page, long context pricing).
+pub const LONG_PROMPT_RATES: &[(&str, u64, f64, f64)] = &[("claude-haiku-5-5", 100_000, 0.50, 2.50)];
+
+/// The price for one request of `model` whose prompt (input plus cache
+/// read and write tokens) is `prompt_tokens` long. Same as [`price_of`],
+/// except that a built-in model listed in [`LONG_PROMPT_RATES`] gets its
+/// higher rates when the prompt is over the threshold. A price set with
+/// [`set_price`] or [`load_prices_json`] is returned unchanged.
+///
+/// ```
+/// use llm_cost_dashboard::cost::pricing::price_for_prompt;
+///
+/// let short = price_for_prompt("claude-haiku-5-5", 100_000).unwrap();
+/// let long = price_for_prompt("claude-haiku-5-5", 100_001).unwrap();
+/// assert!((short.input_per_1m - 0.10).abs() < 1e-12);
+/// assert!((long.input_per_1m - 0.50).abs() < 1e-12);
+/// ```
+pub fn price_for_prompt(model: &str, prompt_tokens: u64) -> Option<ModelPrice> {
+    let base = price_of(model)?;
+    let m = model.trim().to_ascii_lowercase();
+    let key = undated(&m).map(str::to_owned).unwrap_or(m);
+    let overridden = HAS_OVERRIDES.load(Ordering::Acquire)
+        && overrides()
+            .read()
+            .map(|o| o.contains_key(&key) || o.contains_key(&model.trim().to_ascii_lowercase()))
+            .unwrap_or(false);
+    if overridden {
+        return Some(base);
+    }
+    match LONG_PROMPT_RATES.iter().find(|(id, ..)| *id == key) {
+        Some(&(_, threshold, i, o)) if prompt_tokens > threshold => Some(ModelPrice::new(i, o)),
+        _ => Some(base),
+    }
+}
 
 fn overrides() -> &'static RwLock<HashMap<String, ModelPrice>> {
     static O: OnceLock<RwLock<HashMap<String, ModelPrice>>> = OnceLock::new();
@@ -432,11 +477,68 @@ mod tests {
     fn test_cache_read_rates() {
         assert!((price_of("gpt-4o").unwrap().cache_read_rate() - 1.25).abs() < 1e-12);
         assert!((price_of("claude-opus-5-5").unwrap().cache_read_rate() - 0.20).abs() < 1e-12);
+        assert!((price_of("claude-sonnet-5-5").unwrap().cache_read_rate() - 0.10).abs() < 1e-12);
         // Default: 10% of input.
         assert!((price_of("claude-sonnet-4-6").unwrap().cache_read_rate() - 0.30).abs() < 1e-12);
         for (m, _) in CACHE_READ_RATES {
             assert!(lookup_known(m).is_some(), "{m} has a cache rate but no price");
         }
+    }
+
+    /// Every Claude row in Anthropic's pricing table, USD per million tokens:
+    /// (model id, base input, 5m cache write, 1h cache write, cache hit, output).
+    /// Source: https://platform.claude.com/docs/en/about-claude/pricing
+    /// ("Model pricing" table), checked 2026-10-17. If Anthropic changes a
+    /// price, update this table from the page and the code to match.
+    /// Not covered: Claude Mythos 5.1 / 5 (limited availability, no public
+    /// model id on the models overview page) and the retired Claude 3 rows
+    /// that the page no longer lists.
+    const ANTHROPIC_PAGE_2026_10_17: &[(&str, f64, f64, f64, f64, f64)] = &[
+        ("claude-fable-5-1", 10.00, 12.50, 20.00, 0.25, 50.00),
+        ("claude-fable-5", 10.00, 12.50, 20.00, 1.00, 50.00),
+        ("claude-opus-5-5", 4.00, 5.00, 8.00, 0.20, 20.00),
+        ("claude-opus-5", 5.00, 6.25, 10.00, 0.50, 25.00),
+        ("claude-opus-4-8", 5.00, 6.25, 10.00, 0.50, 25.00),
+        ("claude-opus-4-7", 5.00, 6.25, 10.00, 0.50, 25.00),
+        ("claude-opus-4-6", 5.00, 6.25, 10.00, 0.50, 25.00),
+        ("claude-opus-4-5", 5.00, 6.25, 10.00, 0.50, 25.00),
+        ("claude-opus-4-1", 15.00, 18.75, 30.00, 1.50, 75.00),
+        ("claude-opus-4", 15.00, 18.75, 30.00, 1.50, 75.00),
+        ("claude-sonnet-5-5", 2.00, 2.50, 4.00, 0.10, 10.00),
+        ("claude-sonnet-5", 2.00, 2.50, 4.00, 0.20, 10.00),
+        ("claude-sonnet-4-6", 3.00, 3.75, 6.00, 0.30, 15.00),
+        ("claude-sonnet-4-5", 3.00, 3.75, 6.00, 0.30, 15.00),
+        ("claude-sonnet-4", 3.00, 3.75, 6.00, 0.30, 15.00),
+        // Haiku 5.5, prompts up to 100,000 tokens.
+        ("claude-haiku-5-5", 0.10, 0.125, 0.20, 0.01, 0.50),
+        ("claude-haiku-4-5", 1.00, 1.25, 2.00, 0.10, 5.00),
+        ("claude-3-5-haiku-20241022", 0.80, 1.00, 1.60, 0.08, 4.00),
+    ];
+
+    #[test]
+    fn claude_prices_match_anthropic_pricing_page() {
+        let close = |a: f64, b: f64| (a - b).abs() < 1e-9;
+        for &(id, input, w5m, w1h, read, output) in ANTHROPIC_PAGE_2026_10_17 {
+            let p = price_of(id).unwrap_or_else(|| panic!("{id} is missing from PRICING"));
+            assert!(close(p.input_per_1m, input), "{id} input {} != {input}", p.input_per_1m);
+            assert!(close(p.output_per_1m, output), "{id} output {} != {output}", p.output_per_1m);
+            assert!(close(p.cache_write_rate(), w5m), "{id} 5m write {} != {w5m}", p.cache_write_rate());
+            assert!(close(p.cache_write_1h_rate(), w1h), "{id} 1h write {} != {w1h}", p.cache_write_1h_rate());
+            assert!(close(p.cache_read_rate(), read), "{id} cache read {} != {read}", p.cache_read_rate());
+        }
+        // Haiku 5.5, prompts over 100,000 tokens (same page, same date):
+        // $0.50 input, $0.625 5m write, $1 1h write, $0.05 cache hit, $2.50 output.
+        let long = price_for_prompt("claude-haiku-5-5", 100_001).unwrap();
+        assert!(close(long.input_per_1m, 0.50));
+        assert!(close(long.cache_write_rate(), 0.625));
+        assert!(close(long.cache_write_1h_rate(), 1.00));
+        assert!(close(long.cache_read_rate(), 0.05));
+        assert!(close(long.output_per_1m, 2.50));
+        let short = price_for_prompt("claude-haiku-5-5", 100_000).unwrap();
+        assert!(close(short.input_per_1m, 0.10));
+        // Other models are not tiered.
+        let s = price_for_prompt("claude-sonnet-5-5", 900_000).unwrap();
+        assert!(close(s.input_per_1m, 2.00) && close(s.cache_read_rate(), 0.10));
     }
 
     #[test]

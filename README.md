@@ -34,7 +34,7 @@ fn main() -> Result<(), llm_cost_dashboard::DashboardError> {
 | You want | llm-cost-dashboard | Alternatives |
 |---|---|---|
 | Price calls from logs you already have | Plain NDJSON, saved OpenAI or Anthropic responses, Claude Code session logs; prompt-cache reads and 5-minute / 1-hour cache writes priced separately | [ccstat](https://crates.io/crates/ccstat) reads coding-assistant logs only (Claude, Codex, ...) and is a CLI, not a library |
-| A price table you can trust and extend | 104 built-in models, cross-checked in the test suite against [llm-cost-cap](https://crates.io/crates/llm-cost-cap); load [LiteLLM's](https://github.com/BerriAI/litellm) community table (3,680 models) with `--prices` or `load_prices_json` | llm-cost-cap: 16 models, no cache-write pricing, and its Claude Opus 4.5 to 4.7 and Haiku 4.5 prices are out of date |
+| A price table you can trust and extend | 105 built-in models, cross-checked in the test suite against [llm-cost-cap](https://crates.io/crates/llm-cost-cap); load [LiteLLM's](https://github.com/BerriAI/litellm) community table (3,680 models) with `--prices` or `load_prices_json` | llm-cost-cap: 16 models, no cache-write pricing, and its Claude Opus 4.5 to 4.7 and Haiku 4.5 prices are out of date |
 | A forecast and a budget gate | Damped Holt forecast that copes with sparse, bursty logs; org, team and project budgets; webhook alerts | llm-cost-cap gates one call before it is sent (worth combining with this crate) |
 | To watch it live | `llm-dash`: ratatui dashboard that follows the log file, plus `/metrics` for Prometheus and Grafana | [edgequake-llm](https://crates.io/crates/edgequake-llm) tracks cost inside its own multi-provider client; you have to send your calls through it |
 | A small dependency | `default-features = false` leaves serde, chrono, csv and tokio's sync parts; the TUI, HTTP server, webhooks and CLI are features | |
@@ -141,7 +141,7 @@ What the one-shot reports print (real output from `llm-dash 1.3.0` on the demo d
 
 ```text
 $ llm-dash --demo --compare
-Multi-Provider Cost Comparison  (104 models, 22/day requests, 730in/348out avg tokens)
+Multi-Provider Cost Comparison  (105 models, 22/day requests, 730in/348out avg tokens)
 
   Model                                           Monthly USD   Daily USD   Per-1k-req USD  Provider
   ----------------------------------------------------------------------------------------------------
@@ -295,10 +295,10 @@ cooldown_secs = 3600
 
 ## Supported models
 
-104 models across Anthropic, OpenAI, Google, DeepSeek, Mistral, Meta Llama (Together AI and Groq), xAI, Cohere, Perplexity, Amazon Bedrock, Alibaba Qwen, Writer and AI21. Prices are USD per million tokens, from `src/cost/pricing.rs` (last updated 2026-10-03); check them against your provider before relying on the numbers.
+105 models across Anthropic, OpenAI, Google, DeepSeek, Mistral, Meta Llama (Together AI and Groq), xAI, Cohere, Perplexity, Amazon Bedrock, Alibaba Qwen, Writer and AI21. Prices are USD per million tokens, from `src/cost/pricing.rs` (last updated 2026-10-17; the Claude rows are pinned by a test to [Anthropic's pricing page](https://platform.claude.com/docs/en/about-claude/pricing)); check them against your provider before relying on the numbers.
 
 <details>
-<summary><b>Anthropic / Claude 5 family (Anthropic list prices, 2026-09)</b> (6)</summary>
+<summary><b>Anthropic / Claude 5 family (Anthropic list prices, 2026-10-17)</b> (7)</summary>
 
 | Model | Input ($/1M) | Output ($/1M) |
 |---|---|---|
@@ -308,6 +308,9 @@ cooldown_secs = 3600
 | `claude-opus-5` | $5 | $25 |
 | `claude-sonnet-5-5` | $2 | $10 |
 | `claude-sonnet-5` | $2 | $10 |
+| `claude-haiku-5-5` | $0.10 | $0.50 |
+
+`claude-haiku-5-5` is priced by prompt length: a request whose prompt (cache reads and writes included) is over 100,000 tokens pays $0.50 / $2.50 for the whole request; `CostRecord` and `price_for_prompt` apply this. Cache reads are $0.10 on `claude-sonnet-5-5` and $0.20 on `claude-opus-5-5` (0.05x input), $0.25 on `claude-fable-5-1` (0.025x).
 
 </details>
 
