@@ -1,5 +1,13 @@
 # llm-cost-dashboard
 
+<!-- outcome-block -->
+**Know exactly what every LLM call costs, from the logs you already have, before the invoice arrives.**
+
+**Why this over the alternatives:** No proxy to route traffic through: it prices plain log lines and saved OpenAI and Anthropic responses, and shows spend, budget and forecasts in a terminal or Prometheus.
+
+**Guarantee:** if it doesn't do what this README says, [open an issue](https://github.com/Mattbusel/llm-cost-dashboard/issues) and I'll fix it.
+<!-- outcome-block -->
+
 Price every LLM API call your app makes, from a plain log line or the provider's own response, and see spend, budget, forecasts and per-model costs in a terminal dashboard, a Prometheus endpoint or your own Rust code.
 
 [![crates.io](https://img.shields.io/crates/v/llm-cost-dashboard.svg)](https://crates.io/crates/llm-cost-dashboard)
