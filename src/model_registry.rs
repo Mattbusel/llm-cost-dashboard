@@ -178,8 +178,9 @@ impl ModelRegistry {
             model_id: "gpt-4o".to_string(),
             provider: "OpenAI".to_string(),
             release_date: 1_715_126_400, // 2024-05-08
-            input_cost_per_1k: 0.005,
-            output_cost_per_1k: 0.015,
+            // $2.50 / $10.00 per 1M (OpenAI pricing page, checked 2026-10-23)
+            input_cost_per_1k: 0.0025,
+            output_cost_per_1k: 0.010,
             context_window: 128_000,
             max_output_tokens: 4_096,
             capabilities: vec![
@@ -462,6 +463,6 @@ mod tests {
     fn test_combined_cost_per_1k() {
         let r = registry();
         let m = r.get("gpt-4o").unwrap();
-        assert!((m.combined_cost_per_1k() - 0.020).abs() < 1e-9);
+        assert!((m.combined_cost_per_1k() - 0.0125).abs() < 1e-9);
     }
 }
