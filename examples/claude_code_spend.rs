@@ -12,62 +12,38 @@
 //! traffic would cost on the API.
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use llm_cost_dashboard::ingest::Ingester;
-
-fn jsonl_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for e in entries.flatten() {
-        let p = e.path();
-        if p.is_dir() {
-            jsonl_files(&p, out);
-        } else if p.extension().is_some_and(|x| x == "jsonl") {
-            out.push(p);
-        }
-    }
-}
+use llm_cost_dashboard::cost::pricing::{price_source, PriceSource};
+use llm_cost_dashboard::import;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dir = match std::env::args_os().nth(1) {
         Some(d) => PathBuf::from(d),
-        None => {
-            let home = std::env::var_os("USERPROFILE")
-                .or_else(|| std::env::var_os("HOME"))
-                .ok_or("no home directory; pass the projects directory")?;
-            PathBuf::from(home).join(".claude").join("projects")
-        }
+        None => import::claude_code_projects_dir()
+            .ok_or("no home directory; pass the projects directory")?,
     };
-    let mut files = Vec::new();
-    jsonl_files(&dir, &mut files);
-    if files.is_empty() {
+    if import::claude_code_files(&dir).is_empty() {
         println!("No .jsonl session logs under {}", dir.display());
         return Ok(());
     }
 
-    // One ingester for every file, so a request repeated across files
+    // One import over every file, so a request repeated across files
     // (resumed sessions) is counted once.
-    let mut ing = Ingester::new();
-    let mut rejected = 0;
-    for f in &files {
-        let stats = ing.ingest_reader(std::io::BufReader::new(std::fs::File::open(f)?))?;
-        rejected += stats.rejected;
-    }
-
-    let ledger = ing.ledger();
+    let report = import::claude_code(&dir)?;
+    let (files, rejected) = (report.files.len(), report.stats.rejected);
+    let ledger = &report.ledger;
     println!(
         "{} requests in {} session files, ${:.2} at API list prices ({} unreadable lines)\n",
         ledger.len(),
-        files.len(),
+        files,
         ledger.total_usd(),
         rejected
     );
     let mut models: Vec<_> = ledger.by_model().into_values().collect();
     models.sort_by(|a, b| b.total_cost_usd.total_cmp(&a.total_cost_usd));
     for m in &models {
-        let known = llm_cost_dashboard::cost::pricing::lookup_known(&m.model).is_some();
+        let known = price_source(&m.model) != PriceSource::Fallback;
         println!(
             "  {:<32} {:>7} requests  ${:>10.2}{}",
             m.model,

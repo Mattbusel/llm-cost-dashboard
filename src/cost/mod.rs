@@ -88,26 +88,69 @@ impl CostRecord {
         output_tokens: u64,
         latency_ms: u64,
     ) -> Self {
+        let usage = pricing::Usage {
+            input: input_tokens,
+            output: output_tokens,
+            ..pricing::Usage::default()
+        };
+        Self::from_usage(model, provider, &usage, latency_ms)
+    }
+
+    /// Create a record from a request's full token counts: uncached input,
+    /// output, prompt-cache reads, 5-minute and 1-hour cache writes, and
+    /// whether it went through the Batch API. Priced with
+    /// [`pricing::cost_usage`].
+    ///
+    /// `input_tokens` on the record is `usage.input` (uncached input only);
+    /// cache tokens and their cost go to [`CostRecord::cache`]. A batch
+    /// request is billed at the model's Batch API prices when it lists them.
+    ///
+    /// ```
+    /// use llm_cost_dashboard::cost::pricing::Usage;
+    /// use llm_cost_dashboard::CostRecord;
+    ///
+    /// let u = Usage { input: 1_000_000, output: 1_000_000, batch: true, ..Usage::default() };
+    /// let r = CostRecord::from_usage("claude-haiku-4-5", "anthropic", &u, 0);
+    /// // Batch API: $0.50 input and $2.50 output per million tokens.
+    /// assert!((r.total_cost_usd - 3.0).abs() < 1e-9);
+    /// ```
+    pub fn from_usage(
+        model: impl Into<String>,
+        provider: impl Into<String>,
+        usage: &pricing::Usage,
+        latency_ms: u64,
+    ) -> Self {
         let model = model.into();
-        let provider = provider.into();
-        let (ir, or_) = pricing::price_for_prompt(&model, input_tokens)
-            .map(|p| (p.input_per_1m, p.output_per_1m))
-            .unwrap_or(pricing::FALLBACK_PRICING);
-        let input_cost = input_tokens as f64 * ir / 1_000_000.0;
-        let output_cost = output_tokens as f64 * or_ / 1_000_000.0;
+        let c = pricing::cost_usage(&model, usage);
+        Self::from_cost(model, provider.into(), usage, c, latency_ms)
+    }
+
+    /// A record for `usage` with its cost already worked out.
+    pub(crate) fn from_cost(
+        model: String,
+        provider: String,
+        usage: &pricing::Usage,
+        c: pricing::UsageCost,
+        latency_ms: u64,
+    ) -> Self {
         Self {
             id: Uuid::new_v4(),
             timestamp: Utc::now(),
             model,
             provider,
-            input_tokens,
-            output_tokens,
-            input_cost_usd: input_cost,
-            output_cost_usd: output_cost,
-            total_cost_usd: input_cost + output_cost,
+            input_tokens: usage.input,
+            output_tokens: usage.output,
+            input_cost_usd: c.input,
+            output_cost_usd: c.output,
+            total_cost_usd: c.input + c.output + c.cache_read + c.cache_write,
             latency_ms,
             request_id: Uuid::new_v4().to_string(),
-            cache: CacheBreakdown::default(),
+            cache: CacheBreakdown {
+                cache_read_tokens: usage.cache_read,
+                cache_write_tokens: usage.cache_write_5m.saturating_add(usage.cache_write_1h),
+                cache_read_cost_usd: c.cache_read,
+                cache_write_cost_usd: c.cache_write,
+            },
             session_id: None,
         }
     }
@@ -122,50 +165,47 @@ impl CostRecord {
 
     /// Attach cache hit/miss token counts and recompute the total cost.
     ///
-    /// Cache-read tokens are billed at the model's cache-read rate (10% of
-    /// its input rate unless a loaded price file says otherwise), and
-    /// cache-write tokens at its 5-minute cache-write rate (125% of input).
-    /// Both are *in addition* to any non-cached `input_tokens` already on the
-    /// record.
+    /// Cache-read tokens are billed at the model's cache-read rate and
+    /// cache-write tokens at its 5-minute cache-write rate (for Claude, 10%
+    /// and 125% of input). Models that list no separate write price (OpenAI,
+    /// Gemini, DeepSeek) bill writes as input. Both are *in addition* to any
+    /// non-cached `input_tokens` already on the record.
     pub fn with_cache(self, cache_read_tokens: u64, cache_write_tokens: u64) -> Self {
         self.with_cache_tiers(cache_read_tokens, cache_write_tokens, 0)
     }
 
     /// Like [`CostRecord::with_cache`], with 1-hour cache writes priced
-    /// separately (200% of the input rate, Anthropic's rate). Claude Code
-    /// logs report both kinds. For a model priced by prompt length
-    /// (Claude Haiku 5.5), the whole request is repriced from the full
-    /// prompt: input plus cache reads and writes.
+    /// separately (200% of the input rate for Claude). Claude Code logs
+    /// report both kinds. For a model priced by prompt length (Claude Haiku
+    /// 5.5, Gemini 2.5 Pro, GPT-5.4 and later), the whole request is
+    /// repriced from the full prompt: input plus cache reads and writes.
+    ///
+    /// The record is repriced as a standard (non-batch) request; build batch
+    /// records with [`CostRecord::from_usage`].
     pub fn with_cache_tiers(
         mut self,
         cache_read_tokens: u64,
         cache_write_5m_tokens: u64,
         cache_write_1h_tokens: u64,
     ) -> Self {
-        // Prompt length for tiered models (Claude Haiku 5.5) counts cache
-        // reads and writes as well as uncached input.
-        let prompt_tokens = self
-            .input_tokens
-            .saturating_add(cache_read_tokens)
-            .saturating_add(cache_write_5m_tokens)
-            .saturating_add(cache_write_1h_tokens);
-        let (fi, fo) = pricing::FALLBACK_PRICING;
-        let price = pricing::price_for_prompt(&self.model, prompt_tokens)
-            .unwrap_or(pricing::ModelPrice::new(fi, fo));
-        self.input_cost_usd = self.input_tokens as f64 * price.input_per_1m / 1_000_000.0;
-        self.output_cost_usd = self.output_tokens as f64 * price.output_per_1m / 1_000_000.0;
-        let read_cost = cache_read_tokens as f64 * price.cache_read_rate() / 1_000_000.0;
-        let write_cost = (cache_write_5m_tokens as f64 * price.cache_write_rate()
-            + cache_write_1h_tokens as f64 * price.cache_write_1h_rate())
-            / 1_000_000.0;
+        let usage = pricing::Usage {
+            input: self.input_tokens,
+            output: self.output_tokens,
+            cache_read: cache_read_tokens,
+            cache_write_5m: cache_write_5m_tokens,
+            cache_write_1h: cache_write_1h_tokens,
+            ..pricing::Usage::default()
+        };
+        let c = pricing::cost_usage(&self.model, &usage);
+        self.input_cost_usd = c.input;
+        self.output_cost_usd = c.output;
         self.cache = CacheBreakdown {
             cache_read_tokens,
-            cache_write_tokens: cache_write_5m_tokens + cache_write_1h_tokens,
-            cache_read_cost_usd: read_cost,
-            cache_write_cost_usd: write_cost,
+            cache_write_tokens: cache_write_5m_tokens.saturating_add(cache_write_1h_tokens),
+            cache_read_cost_usd: c.cache_read,
+            cache_write_cost_usd: c.cache_write,
         };
-        self.total_cost_usd =
-            self.input_cost_usd + self.output_cost_usd + read_cost + write_cost;
+        self.total_cost_usd = c.input + c.output + c.cache_read + c.cache_write;
         self
     }
 }

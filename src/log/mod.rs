@@ -415,6 +415,35 @@ impl RequestLog {
         &mut self,
         line: &str,
     ) -> Result<Option<CacheTokens>, DashboardError> {
+        Ok(self.ingest_line_usage(line)?.map(|u| CacheTokens {
+            read: u.cache_read,
+            write_5m: u.cache_write_5m,
+            write_1h: u.cache_write_1h,
+        }))
+    }
+
+    /// Like [`RequestLog::ingest_line_detailed`], but returns the line's
+    /// full token counts as a [`crate::cost::pricing::Usage`]: uncached input,
+    /// output, cache reads and writes, and `batch` when the line carries
+    /// `"batch": true` (a Batch API request). Pass it to
+    /// [`crate::CostRecord::from_usage`] to price the request.
+    ///
+    /// ```
+    /// use llm_cost_dashboard::RequestLog;
+    ///
+    /// let mut log = RequestLog::new();
+    /// // A saved OpenAI response from a batch job: 60 of the 100 prompt
+    /// // tokens were served from the prompt cache.
+    /// let u = log
+    ///     .ingest_line_usage(r#"{"model":"gpt-4o","usage":{"prompt_tokens":100,"completion_tokens":5,"prompt_tokens_details":{"cached_tokens":60}},"batch":true}"#)
+    ///     .unwrap()
+    ///     .unwrap();
+    /// assert_eq!((u.input, u.cache_read, u.output, u.batch), (40, 60, 5, true));
+    /// ```
+    pub fn ingest_line_usage(
+        &mut self,
+        line: &str,
+    ) -> Result<Option<crate::cost::pricing::Usage>, DashboardError> {
         let value: serde_json::Value = serde_json::from_str(line.trim())
             .map_err(|e| DashboardError::LogParseError(e.to_string()))?;
         // Only JSON objects are valid records; serde would otherwise accept a
@@ -450,6 +479,10 @@ impl RequestLog {
             }
         }
         let cache = cache_tokens(&value);
+        let batch = value
+            .get("batch")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
         let record: IncomingRecord = serde_json::from_value(value)
             .map_err(|e| DashboardError::LogParseError(e.to_string()))?;
         if let Some(ts) = &record.timestamp {
@@ -462,8 +495,16 @@ impl RequestLog {
         if let Some(key) = request_key {
             self.seen.insert(key);
         }
+        let usage = crate::cost::pricing::Usage {
+            input: record.input_tokens,
+            output: record.output_tokens,
+            cache_read: cache.read,
+            cache_write_5m: cache.write_5m,
+            cache_write_1h: cache.write_1h,
+            batch,
+        };
         self.append(record.into());
-        Ok(Some(cache))
+        Ok(Some(usage))
     }
 
     /// Iterate over entries whose model matches `model` (case-insensitive).

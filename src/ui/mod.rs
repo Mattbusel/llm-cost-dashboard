@@ -231,13 +231,13 @@ impl App {
     /// dashboard remains in a valid state and the caller may skip or surface
     /// the error.
     pub fn ingest_line(&mut self, line: &str) -> Result<(), DashboardError> {
-        let Some(cache) = self.log.ingest_line_detailed(line)? else {
+        let Some(usage) = self.log.ingest_line_usage(line)? else {
             // A valid line that is not a new request (a repeat or a
             // non-billable Claude Code line).
             return Ok(());
         };
         if let Some(last) = self.log.all().last() {
-            let mut rec = crate::ingest::record_for(last, cache);
+            let mut rec = crate::ingest::record_for_usage(last, &usage);
             // Tag the record with the active session if one is set.
             if let Some(ref session) = self.current_session {
                 rec = rec.with_session(session.clone());

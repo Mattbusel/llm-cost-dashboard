@@ -5,7 +5,8 @@
 //! ## Where to start in the API
 //!
 //! - [`ingest::Ingester`]: log lines in, priced [`CostRecord`]s out.
-//! - [`cost::pricing`]: the price table, [`cost::pricing::load_prices_json`] and [`cost::pricing::set_price`].
+//! - [`import`]: Claude Code transcripts and OpenAI usage CSV exports in, priced records out.
+//! - [`cost::pricing`]: prices (from the `llm-prices` crate, then a built-in table), [`cost::pricing::cost_usage`], [`cost::pricing::load_prices_json`] and [`cost::pricing::set_price`].
 //! - [`CostLedger`]: totals, per-model stats, exports.
 //! - [`forecast::CostForecaster`]: hour, day, week and month projections.
 //! - [`budget::hierarchy::OrgTree`]: org, team and project budgets.
@@ -24,6 +25,7 @@
 //! - [`error`] - unified error type
 //! - [`export`] - CSV and JSON cost data export (file-based and in-memory)
 //! - [`forecast`] - OLS regression and Holt-Winters exponential smoothing cost forecaster
+//! - [`import`] - Claude Code transcript and OpenAI usage CSV importers
 //! - [`log`] - newline-delimited JSON log ingestion with header-based provider detection
 //! - [`org`] - multi-tenant organization -> team -> project hierarchy with spend tracking
 //! - [`recommendations`] - model recommendation engine with projected monthly savings
@@ -55,6 +57,7 @@ pub mod cost;
 pub mod error;
 pub mod export;
 pub mod forecast;
+pub mod import;
 pub mod ingest;
 pub mod interop;
 pub mod log;

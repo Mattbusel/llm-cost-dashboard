@@ -70,7 +70,7 @@ Shell completions: `llm-dash --completions bash > ~/.local/share/bash-completion
 
 ```toml
 [dependencies]
-llm-cost-dashboard = { version = "1.3", default-features = false }   # pricing, ingest, forecasts, exports
+llm-cost-dashboard = { version = "1.4", default-features = false }   # pricing, ingest, forecasts, exports
 ```
 
 **In GitLab CI:** fail a pipeline when the projected monthly bill is over budget with the [`llm-spend-check`](https://gitlab.com/explore/catalog/mattbusel/llm-ci) CI/CD component.
@@ -195,6 +195,27 @@ Or log the API's response object. Tokens come from `prompt_tokens` / `completion
 
 Claude Code logs (`~/.claude/projects/**/*.jsonl`) are read as is. Each request counts once, even though Claude Code repeats it. User turns and bookkeeping lines are skipped. Cache reads and 5-minute / 1-hour cache writes are priced separately.
 
+Add `"batch": true` to a line for a request sent through a provider's Batch API; it is priced at the batch rates (half price on every current Anthropic, OpenAI and Gemini model that lists one).
+
+### Importing Claude Code and OpenAI usage
+
+`--claude-code` loads every Claude Code transcript at once (`$CLAUDE_CONFIG_DIR/projects`, or `~/.claude/projects`, or the directory you pass), subagent transcripts included. Each record is tagged with its session id, and a request repeated in a resumed session counts once:
+
+```
+llm-dash --claude-code --forecast
+llm-dash --claude-code ~/backup/.claude/projects --export-csv claude-code.csv
+```
+
+`--openai-usage-csv FILE` loads an OpenAI usage export, one row per usage bucket. Columns are matched by name: `model`, `input_tokens`, `output_tokens` are required; `input_cached_tokens`, `num_model_requests`, `batch`, `service_tier` and `start_time` (Unix seconds or ISO 8601) are used when present; anything else (`project_id`, `api_key_id`, audio token counts) is ignored. `input_tokens` is taken to include the cached tokens, as the Usage API reports it. `batch = true` and `service_tier = flex` rows bill at Batch API prices (OpenAI prices Flex processing at Batch API rates); `priority` rows bill at standard prices because the price table has no Priority processing rates, so they are understated. A row with an empty `num_model_requests` cell counts as one request. Export grouped by model, or the rows have no model and are rejected.
+
+A transcript line that is not valid UTF-8 or not JSON (for example the last line of a session Claude Code was killed while writing, or one still being written) is counted as rejected and the rest of the file is still read.
+
+```
+llm-dash --openai-usage-csv completions_usage.csv --compare
+```
+
+From Rust: `llm_cost_dashboard::import::claude_code(&dir)` and `import::openai_usage_csv(reader)` return an `ImportReport` with the priced ledger and counts.
+
 `timestamp` (or `ts`, `time`, `created_at`, `created`) can be RFC 3339 or Unix seconds or milliseconds. No timestamp means it's dated when read. Bad lines are skipped (`RUST_LOG=warn` shows why). Model names ignore case, and a dated id like `claude-sonnet-4-5-20250929` uses the undated price. Unknown models get a guessed $5 / $15 per million tokens, listed on stderr so you can add real prices with `--prices`.
 
 ## The dashboard
@@ -303,7 +324,9 @@ cooldown_secs = 3600
 
 ## Supported models
 
-105 models across Anthropic, OpenAI, Google, DeepSeek, Mistral, Meta Llama (Together AI and Groq), xAI, Cohere, Perplexity, Amazon Bedrock, Alibaba Qwen, Writer and AI21. USD per million tokens, from `src/cost/pricing.rs` (updated 2026-10-17; a test pins the Claude rows to [Anthropic's pricing page](https://platform.claude.com/docs/en/about-claude/pricing)). Check against your provider before relying on them.
+Since 1.4.0, Anthropic, OpenAI, Google Gemini and DeepSeek prices come from the [`llm-prices`](https://crates.io/crates/llm-prices) crate: every row is read from the provider's pricing page, dated, and carries cache-read, 5-minute / 1-hour cache-write, Batch API and long-context prices. Updating that dependency updates the prices. It also understands provider prefixes (`anthropic/`, `models/`), Bedrock ids (`us.anthropic.claude-...-v1:0`) and Vertex `@date` ids. `cost::pricing::price_source(model)` says where a price came from, and `cost::pricing::llm_prices_row(model)` gives the source page and check date.
+
+The built-in table below still prices everything else: Mistral, Meta Llama (Together AI and Groq), xAI, Cohere, Perplexity, Amazon Bedrock, Alibaba Qwen, Writer, AI21, and older OpenAI and Gemini ids. Where both list a model, `llm-prices` wins; prices you load with `--prices` win over both. USD per million tokens, from `src/cost/pricing.rs`. Check against your provider before relying on them.
 
 <details>
 <summary><b>Anthropic / Claude 5 family (Anthropic list prices, 2026-10-17)</b> (7)</summary>
@@ -581,7 +604,7 @@ Everything the dashboard does is also a Rust library ([docs.rs](https://docs.rs/
 
 ```toml
 [dependencies]
-llm-cost-dashboard = { version = "1.3", default-features = false }
+llm-cost-dashboard = { version = "1.4", default-features = false }
 ```
 
 The crate is `llm_cost_dashboard`. A ledger of priced requests:

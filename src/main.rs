@@ -21,14 +21,19 @@ use tracing::{error, info, warn};
 
 Feed it a newline-delimited JSON log of your model calls (model, input_tokens,
 output_tokens, optional latency_ms and timestamp) and it prices every request from a
-built-in table of 105 models. Saved OpenAI or Anthropic responses work too: token
-counts are read from prompt_tokens/completion_tokens or a nested usage object.",
+price table (the llm-prices crate for Anthropic, OpenAI, Gemini and
+DeepSeek, plus a built-in table for other providers). Claude Code transcripts
+(--claude-code) and OpenAI usage CSV exports (--openai-usage-csv) load directly.
+Saved OpenAI or Anthropic responses work too: token counts are read from
+prompt_tokens/completion_tokens or a nested usage object.",
     after_help = "Examples:
   llm-dash --demo                                  try the dashboard with sample traffic
   llm-dash --log-file requests.ndjson --budget 50  watch your own log live
   llm-dash --demo --compare                        rank every model by monthly cost
   llm-dash --demo --forecast                       project the next hour, day, week, month
   llm-dash --log-file requests.ndjson --diff 2026-09-01 2026-09-02
+  llm-dash --claude-code --forecast                what Claude Code would cost on the API
+  llm-dash --openai-usage-csv usage.csv --compare  price an OpenAI usage export
 
 Log line format:
   {\"model\":\"gpt-4o-mini\",\"input_tokens\":512,\"output_tokens\":256,\"latency_ms\":340}
@@ -51,6 +56,22 @@ struct Cli {
     /// file after start-up show up live.
     #[arg(long)]
     log_file: Option<PathBuf>,
+
+    /// Load Claude Code session transcripts and price every request at API
+    /// list prices, prompt-cache reads and writes included.
+    ///
+    /// With no DIR, reads $CLAUDE_CONFIG_DIR/projects, or ~/.claude/projects.
+    /// Each session's records are tagged with its session id.
+    #[arg(long, value_name = "DIR", num_args = 0..=1)]
+    claude_code: Option<Option<PathBuf>>,
+
+    /// Load an OpenAI usage CSV export: one row per usage bucket with model,
+    /// input_tokens, output_tokens and optionally input_cached_tokens,
+    /// num_model_requests, batch, service_tier and start_time (the Usage
+    /// API's field names). Flex rows bill at Batch API prices; priority rows
+    /// bill at standard prices, which understates them.
+    #[arg(long, value_name = "FILE")]
+    openai_usage_csv: Option<PathBuf>,
 
     /// Start with demo data pre-loaded
     #[arg(long)]
@@ -318,6 +339,57 @@ fn main() {
             Err(e) => {
                 error!(path = %path.display(), error = %e, "failed to read log file");
                 eprintln!("Error reading log file {}: {e}", path.display());
+                std::process::exit(1);
+            }
+        }
+    }
+
+    if let Some(dir) = &cli.claude_code {
+        let dir = match dir.clone().or_else(llm_cost_dashboard::import::claude_code_projects_dir) {
+            Some(d) => d,
+            None => {
+                eprintln!("No home directory found; pass the transcript directory: --claude-code DIR");
+                std::process::exit(1);
+            }
+        };
+        match llm_cost_dashboard::import::claude_code(&dir) {
+            Ok(report) => {
+                eprintln!(
+                    "Claude Code: {} requests from {} transcripts in {} (${:.2} at API list prices, {} unreadable)",
+                    report.ledger.len(),
+                    report.files.len(),
+                    dir.display(),
+                    report.ledger.total_usd(),
+                    report.stats.rejected
+                );
+                for rec in report.ledger.records() {
+                    app.record(rec.clone());
+                }
+            }
+            Err(e) => {
+                eprintln!("Error reading Claude Code transcripts in {}: {e}", dir.display());
+                std::process::exit(1);
+            }
+        }
+    }
+
+    if let Some(path) = &cli.openai_usage_csv {
+        match llm_cost_dashboard::import::openai_usage_csv_file(path) {
+            Ok(report) => {
+                eprintln!(
+                    "OpenAI usage CSV: {} rows ({} requests, ${:.2}) from {} ({} rejected)",
+                    report.ledger.len(),
+                    report.requests,
+                    report.ledger.total_usd(),
+                    path.display(),
+                    report.stats.rejected
+                );
+                for rec in report.ledger.records() {
+                    app.record(rec.clone());
+                }
+            }
+            Err(e) => {
+                eprintln!("Error reading OpenAI usage CSV {}: {e}", path.display());
                 std::process::exit(1);
             }
         }

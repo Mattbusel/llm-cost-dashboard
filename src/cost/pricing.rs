@@ -1,24 +1,74 @@
-//! Per-model token pricing table (USD per 1 million tokens).
+//! Per-model token prices (USD per 1 million tokens) and request costing.
 //!
 //! All prices are stored as `f64` values representing US dollars per 1,000,000
-//! tokens.  Use [`compute_cost`] for convenience, [`lookup_known`] when you
-//! need to know whether a model is priced at all, or [`lookup`] for the raw
-//! rates with the fallback applied.
+//! tokens.  Use [`compute_cost`] for convenience, [`cost_usage`] for a whole
+//! response (prompt-cache reads and writes, Batch API, long-context tiers),
+//! [`lookup_known`] when you need to know whether a model is priced at all,
+//! or [`lookup`] for the raw rates with the fallback applied.
 //!
-//! The built-in table can be extended or overridden at run time with
-//! [`load_prices_json`] (LiteLLM's `model_prices_and_context_window.json`
-//! format, or a simple `{"model": {"input_usd_per_1m": .., "output_usd_per_1m": ..}}`
-//! map) or [`set_price`]. Overrides apply process-wide, to every
-//! [`crate::CostRecord`] created afterwards.
+//! # Where prices come from
 //!
-//! Dated model ids (`claude-sonnet-4-5-20250929`, `gpt-4o-2024-08-06`) fall
-//! back to the undated entry when the dated one is not listed.
+//! A model id is resolved in this order (see [`price_source`]):
+//!
+//! 1. A price set at run time with [`set_price`] or [`load_prices_json`]
+//!    (LiteLLM's `model_prices_and_context_window.json` format, or a simple
+//!    `{"model": {"input_usd_per_1m": .., "output_usd_per_1m": ..}}` map).
+//! 2. The [`llm_prices`] crate: dated, source-cited Anthropic, OpenAI, Google
+//!    Gemini and DeepSeek rows with cache-read, cache-write (5-minute and
+//!    1-hour), Batch API and long-context prices. Updating that dependency
+//!    updates these prices; [`LLM_PRICES_TABLE_DATE`] says how old they are.
+//!    It also resolves provider prefixes (`anthropic/`, `models/`), Bedrock
+//!    ids (`us.anthropic.claude-...-v1:0`) and Vertex `@date` ids.
+//! 3. The built-in [`PRICING`] table, which still covers the models
+//!    `llm-prices` does not list (Mistral, Llama hosts, Grok, Cohere,
+//!    Perplexity, Bedrock Nova, Qwen and older OpenAI and Gemini ids).
+//! 4. [`FALLBACK_PRICING`] when nothing matches.
+//!
+//! Overrides apply process-wide, to every [`crate::CostRecord`] created
+//! afterwards. Dated model ids (`claude-sonnet-4-5-20250929`,
+//! `gpt-4o-2024-08-06`) fall back to the undated entry when the dated one is
+//! not listed.
+//!
+//! ```
+//! use llm_cost_dashboard::cost::pricing::{cost_usage, price_source, PriceSource, Usage};
+//!
+//! // A Claude Code turn: 2 fresh input tokens, 30,000 read from the prompt
+//! // cache, 1,000 written to the 1-hour cache, 360 output tokens.
+//! let u = Usage { input: 2, cache_read: 30_000, cache_write_1h: 1_000, output: 360, ..Usage::default() };
+//! let c = cost_usage("claude-sonnet-4-5-20250929", &u);
+//! assert_eq!(c.source, PriceSource::LlmPrices);
+//! // 2 x $3 + 30,000 x $0.30 + 1,000 x $6 + 360 x $15, per million tokens.
+//! assert!((c.total - 0.020_406).abs() < 1e-12);
+//!
+//! // The same request through the Batch API costs half.
+//! let b = cost_usage("claude-sonnet-4-5-20250929", &Usage { batch: true, ..u });
+//! assert!(b.batch_priced);
+//! assert!((b.total - c.total / 2.0).abs() < 1e-12);
+//!
+//! assert_eq!(price_source("mistral-nemo"), PriceSource::BuiltIn);
+//! ```
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{OnceLock, RwLock};
 
 use crate::error::DashboardError;
+
+/// Token counts of one request, the input to [`cost_usage`] and
+/// [`crate::CostRecord::from_usage`]. Re-exported from `llm-prices`; see
+/// its docs for how Anthropic, OpenAI and Gemini usage objects map onto it.
+///
+/// This re-export (and [`llm_prices_row`]) makes `llm-prices` 1.x part of
+/// this crate's public API: moving to an `llm-prices` release that changes
+/// `Usage` or `Price` incompatibly (2.0 plans new `Usage` fields) will be a
+/// major release of this crate. Build a `Usage` with `..Usage::default()`
+/// for the fields you do not set.
+pub use llm_prices::Usage;
+
+/// Date the bundled `llm-prices` table was generated (ISO 8601). Prices from
+/// that table are only as current as this date; update the `llm-prices`
+/// dependency to refresh them.
+pub const LLM_PRICES_TABLE_DATE: &str = llm_prices::GENERATED;
 
 /// Statically known per-model pricing entries.
 ///
@@ -158,7 +208,8 @@ pub const PRICING: &[(&str, f64, f64)] = &[
     ("jamba-1.5-mini", 0.20, 0.40),
 ];
 
-/// Fallback pricing used when the model is not found in [`PRICING`].
+/// Fallback pricing used when the model is not found in `llm-prices`, in
+/// [`PRICING`] or in the run-time overrides.
 ///
 /// This is a mid-range estimate to avoid wildly incorrect costs for unknown
 /// models.  The [`crate::error::DashboardError::UnknownModel`] variant is
@@ -177,6 +228,13 @@ pub struct ModelPrice {
     pub cache_read_per_1m: Option<f64>,
     /// Prompt-cache writes (5-minute cache); `None` means 125% of the input rate.
     pub cache_write_per_1m: Option<f64>,
+    /// Prompt-cache writes (1-hour cache); `None` means 200% of the input rate.
+    pub cache_write_1h_per_1m: Option<f64>,
+    /// Batch API input rate; `None` means the model lists no batch price, and
+    /// batch requests are billed at the standard rates.
+    pub batch_input_per_1m: Option<f64>,
+    /// Batch API output rate; see [`ModelPrice::batch_input_per_1m`].
+    pub batch_output_per_1m: Option<f64>,
 }
 
 impl ModelPrice {
@@ -187,7 +245,17 @@ impl ModelPrice {
             output_per_1m,
             cache_read_per_1m: None,
             cache_write_per_1m: None,
+            cache_write_1h_per_1m: None,
+            batch_input_per_1m: None,
+            batch_output_per_1m: None,
         }
+    }
+
+    /// Set Batch API input and output rates (USD per million tokens).
+    pub fn with_batch_rates(mut self, input_per_1m: f64, output_per_1m: f64) -> Self {
+        self.batch_input_per_1m = Some(input_per_1m);
+        self.batch_output_per_1m = Some(output_per_1m);
+        self
     }
 
     /// Set explicit cache read and write rates (USD per million tokens).
@@ -207,9 +275,315 @@ impl ModelPrice {
         self.cache_write_per_1m.unwrap_or(self.input_per_1m * 1.25)
     }
 
-    /// 1-hour cache-write rate: 200% of input (Anthropic's rate).
+    /// 1-hour cache-write rate, defaulting to 200% of input (Anthropic's rate).
     pub fn cache_write_1h_rate(&self) -> f64 {
-        self.input_per_1m * 2.0
+        self.cache_write_1h_per_1m.unwrap_or(self.input_per_1m * 2.0)
+    }
+
+    /// The rates of one `llm-prices` row, or of its long-context tier when
+    /// `long` is set and the row has one. `None` when the row lists no input
+    /// price. A row without an output price (embedding models) gets 0.
+    fn from_table(p: &llm_prices::Price, long: bool) -> Option<Self> {
+        let (input, output, read, writes, bi, bo) = match p.long_context {
+            Some(lc) if long => {
+                (lc.input, lc.output, lc.cache_read, lc.cache_write, lc.batch_input, lc.batch_output)
+            }
+            _ => (p.input, p.output, p.cache_read, p.cache_write, p.batch_input, p.batch_output),
+        };
+        let input = input?;
+        let write = |ttl: &str| writes.iter().find(|(k, _)| *k == ttl).map(|(_, v)| *v);
+        let batch = bi.zip(bo);
+        Some(Self {
+            input_per_1m: input,
+            output_per_1m: output.unwrap_or(0.0),
+            // No listed cached-input price: cache reads bill as input.
+            cache_read_per_1m: Some(read.unwrap_or(input)),
+            // No listed 5m / 1h write price (OpenAI, Gemini, DeepSeek):
+            // writes bill as ordinary input.
+            cache_write_per_1m: Some(write("5m").unwrap_or(input)),
+            cache_write_1h_per_1m: Some(write("1h").unwrap_or(input)),
+            batch_input_per_1m: batch.map(|(i, _)| i),
+            batch_output_per_1m: batch.map(|(_, o)| o),
+        })
+    }
+}
+
+/// Where the price used for a model came from. See the [module docs](self).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum PriceSource {
+    /// Set at run time with [`set_price`] or [`load_prices_json`].
+    Override,
+    /// The `llm-prices` crate table.
+    LlmPrices,
+    /// The built-in [`PRICING`] table.
+    BuiltIn,
+    /// Not found anywhere: [`FALLBACK_PRICING`].
+    Fallback,
+}
+
+/// Cost in USD of one request, split by token kind. Returned by [`cost_usage`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
+pub struct UsageCost {
+    /// Uncached input tokens.
+    pub input: f64,
+    /// Output tokens.
+    pub output: f64,
+    /// Tokens read from the prompt cache.
+    pub cache_read: f64,
+    /// Tokens written to the prompt cache, 5-minute and 1-hour together.
+    pub cache_write: f64,
+    /// Sum of the other cost fields.
+    pub total: f64,
+    /// The prompt was over the model's long-context threshold, so the whole
+    /// request was billed at the long-context prices.
+    pub long_context: bool,
+    /// Batch API prices were applied. `false` for a batch request on a model
+    /// that lists no batch price (it is billed at the standard prices).
+    pub batch_priced: bool,
+    /// Where the prices came from.
+    pub source: PriceSource,
+}
+
+/// The price entry a model id resolves to.
+enum Found {
+    Custom(ModelPrice, PriceSource),
+    Table(&'static llm_prices::Price),
+}
+
+fn find_override(model: &str) -> Option<ModelPrice> {
+    if !HAS_OVERRIDES.load(Ordering::Acquire) {
+        return None;
+    }
+    let key = model.to_ascii_lowercase();
+    overrides().read().ok().and_then(|m| m.get(&key).copied())
+}
+
+fn find_table(model: &str) -> Option<&'static llm_prices::Price> {
+    llm_prices::lookup(model).filter(|p| p.input.is_some())
+}
+
+fn find_builtin(model: &str) -> Option<ModelPrice> {
+    let table = builtin();
+    if model.bytes().any(|b| b.is_ascii_uppercase()) {
+        table.get(&model.to_ascii_lowercase()).copied()
+    } else {
+        table.get(model).copied()
+    }
+}
+
+/// Resolve a model id: overrides (exact, then undated), then `llm-prices`,
+/// then the built-in table (each exact, then undated).
+fn resolve(model: &str) -> Option<Found> {
+    let model = model.trim();
+    let undated_id = undated(model);
+    if let Some(p) = find_override(model).or_else(|| undated_id.and_then(find_override)) {
+        return Some(Found::Custom(p, PriceSource::Override));
+    }
+    let table_or_builtin = |m: &str| {
+        find_table(m)
+            .map(Found::Table)
+            .or_else(|| find_builtin(m).map(|p| Found::Custom(p, PriceSource::BuiltIn)))
+    };
+    table_or_builtin(model).or_else(|| undated_id.and_then(table_or_builtin))
+}
+
+/// Where the price for `model` comes from.
+pub fn price_source(model: &str) -> PriceSource {
+    match resolve(model) {
+        Some(Found::Table(_)) => PriceSource::LlmPrices,
+        Some(Found::Custom(_, s)) => s,
+        None => PriceSource::Fallback,
+    }
+}
+
+/// The `llm-prices` row `model` is priced from, if it is (a run-time
+/// override takes precedence and makes this `None`). The row carries the
+/// provider's pricing page URL and the date it was checked.
+pub fn llm_prices_row(model: &str) -> Option<&'static llm_prices::Price> {
+    match resolve(model) {
+        Some(Found::Table(p)) => Some(p),
+        _ => None,
+    }
+}
+
+/// Cost in USD of one request from its token counts.
+///
+/// Rules (the same as [`llm_prices::Price::cost_usage`], which prices every
+/// model the `llm-prices` table lists):
+///
+/// - `usage.input` is the **uncached** input only. Cache reads bill at the
+///   model's cache-read price, cache writes at its 5-minute or 1-hour price.
+///   OpenAI, Gemini and DeepSeek list no separate 5-minute / 1-hour write
+///   price; writes reported on those models bill as ordinary input.
+/// - **Long context**: when the whole prompt (input plus cache reads and
+///   writes) is over the model's threshold, every token bills at the
+///   long-context prices.
+/// - **Batch**: with `usage.batch`, input and output bill at the Batch API
+///   prices and cache tokens get the same discount. A model with no listed
+///   batch price is billed at standard prices and
+///   [`UsageCost::batch_priced`] is `false`.
+/// - Unknown models use [`FALLBACK_PRICING`] with the default cache rates.
+///
+/// ```
+/// use llm_cost_dashboard::cost::pricing::{cost_usage, Usage};
+///
+/// // OpenAI reports prompt_tokens including cached tokens; pass the split.
+/// let u = Usage { input: 1_000, cache_read: 9_000, output: 500, ..Usage::default() };
+/// let c = cost_usage("gpt-4o", &u);
+/// // 1,000 x $2.50 + 9,000 x $1.25 + 500 x $10, per million tokens.
+/// assert!((c.total - 0.018_75).abs() < 1e-12);
+/// ```
+pub fn cost_usage(model: &str, usage: &Usage) -> UsageCost {
+    match resolve(model) {
+        Some(Found::Table(p)) => table_cost(p, usage).unwrap_or_else(|| {
+            let long = p
+                .long_context
+                .is_some_and(|lc| usage.prompt_tokens() > lc.threshold_tokens);
+            let price = ModelPrice::from_table(p, long)
+                .or_else(|| ModelPrice::from_table(p, false))
+                .unwrap_or(ModelPrice::new(FALLBACK_PRICING.0, FALLBACK_PRICING.1));
+            UsageCost {
+                long_context: long,
+                ..rates_cost(price, usage, PriceSource::LlmPrices)
+            }
+        }),
+        Some(Found::Custom(p, PriceSource::BuiltIn)) => {
+            let price = builtin_for_prompt(model, p, usage.prompt_tokens());
+            rates_cost(price, usage, PriceSource::BuiltIn)
+        }
+        Some(Found::Custom(p, source)) => rates_cost(p, usage, source),
+        None => rates_cost(
+            ModelPrice::new(FALLBACK_PRICING.0, FALLBACK_PRICING.1),
+            usage,
+            PriceSource::Fallback,
+        ),
+    }
+}
+
+/// Cost in USD of `requests` requests whose token counts add up to `usage`,
+/// such as one bucket of a provider's usage export.
+///
+/// Same as [`cost_usage`], except that the long-context tier is chosen from
+/// the **average** prompt per request, not the bucket's total: 1,000
+/// requests of 1,000 tokens each are 1,000,000 prompt tokens, but none of
+/// them is a long-context request. Requests in one bucket are assumed to
+/// fall on the same side of the threshold. `requests` of 0 or 1 is
+/// [`cost_usage`].
+///
+/// ```
+/// use llm_cost_dashboard::cost::pricing::{cost_usage, cost_usage_bucket, Usage};
+///
+/// let bucket = Usage { input: 1_000_000, output: 10_000, ..Usage::default() };
+/// // As one request, 1M tokens is over GPT-5.4's 272,000-token threshold.
+/// assert!(cost_usage("gpt-5.4", &bucket).long_context);
+/// // As 1,000 requests of 1,000 tokens, it is not.
+/// let c = cost_usage_bucket("gpt-5.4", &bucket, 1_000);
+/// assert!(!c.long_context);
+/// // 1M x $2.50 + 10,000 x $15, per million tokens.
+/// assert!((c.total - 2.65).abs() < 1e-9);
+/// ```
+pub fn cost_usage_bucket(model: &str, usage: &Usage, requests: u64) -> UsageCost {
+    if requests <= 1 {
+        return cost_usage(model, usage);
+    }
+    let avg_prompt = usage.prompt_tokens().div_ceil(requests);
+    match resolve(model) {
+        Some(Found::Table(p)) => {
+            let long = p.long_context.is_some_and(|lc| avg_prompt > lc.threshold_tokens);
+            let full = cost_usage(model, usage);
+            if full.long_context == long {
+                return full;
+            }
+            match ModelPrice::from_table(p, long) {
+                Some(price) => UsageCost {
+                    long_context: long,
+                    ..rates_cost(price, usage, PriceSource::LlmPrices)
+                },
+                None => full,
+            }
+        }
+        Some(Found::Custom(p, PriceSource::BuiltIn)) => {
+            rates_cost(builtin_for_prompt(model, p, avg_prompt), usage, PriceSource::BuiltIn)
+        }
+        _ => cost_usage(model, usage),
+    }
+}
+
+/// Price a request with `llm-prices`. Cache writes on a row that lists no
+/// price for their lifetime are billed as input, and a batch request on a
+/// row with no batch price is billed at standard prices. `None` when the row
+/// still cannot price it (no output price).
+fn table_cost(p: &llm_prices::Price, usage: &Usage) -> Option<UsageCost> {
+    let mut u = *usage;
+    if u.cache_write_5m > 0 && p.cache_write("5m").is_none() {
+        u.input = u.input.saturating_add(u.cache_write_5m);
+        u.cache_write_5m = 0;
+    }
+    if u.cache_write_1h > 0 && p.cache_write("1h").is_none() {
+        u.input = u.input.saturating_add(u.cache_write_1h);
+        u.cache_write_1h = 0;
+    }
+    let (c, batch_priced) = match p.cost_usage(&u) {
+        Some(c) => (c, u.batch),
+        None if u.batch => (p.cost_usage(&Usage { batch: false, ..u })?, false),
+        None => return None,
+    };
+    Some(UsageCost {
+        input: c.input,
+        output: c.output,
+        cache_read: c.cache_read,
+        cache_write: c.cache_write,
+        total: c.total,
+        long_context: c.long_context,
+        batch_priced,
+        source: PriceSource::LlmPrices,
+    })
+}
+
+/// Price a request from plain rates (overrides, built-in rows, fallback).
+fn rates_cost(price: ModelPrice, usage: &Usage, source: PriceSource) -> UsageCost {
+    let batch = if usage.batch {
+        price.batch_input_per_1m.zip(price.batch_output_per_1m)
+    } else {
+        None
+    };
+    let (in_rate, out_rate, discount) = match batch {
+        Some((bi, bo)) => {
+            let d = if price.input_per_1m > 0.0 { bi / price.input_per_1m } else { 1.0 };
+            (bi, bo, d)
+        }
+        None => (price.input_per_1m, price.output_per_1m, 1.0),
+    };
+    const M: f64 = 1_000_000.0;
+    let input = usage.input as f64 * in_rate / M;
+    let output = usage.output as f64 * out_rate / M;
+    let cache_read = usage.cache_read as f64 * price.cache_read_rate() * discount / M;
+    let cache_write = (usage.cache_write_5m as f64 * price.cache_write_rate()
+        + usage.cache_write_1h as f64 * price.cache_write_1h_rate())
+        * discount
+        / M;
+    UsageCost {
+        input,
+        output,
+        cache_read,
+        cache_write,
+        total: input + output + cache_read + cache_write,
+        long_context: false,
+        batch_priced: batch.is_some(),
+        source,
+    }
+}
+
+/// A built-in row, switched to its [`LONG_PROMPT_RATES`] entry when the
+/// prompt is over the threshold.
+fn builtin_for_prompt(model: &str, base: ModelPrice, prompt_tokens: u64) -> ModelPrice {
+    let m = model.trim().to_ascii_lowercase();
+    let key = undated(&m).unwrap_or(&m);
+    match LONG_PROMPT_RATES.iter().find(|(id, ..)| *id == key) {
+        Some(&(_, threshold, i, o)) if prompt_tokens > threshold => ModelPrice::new(i, o),
+        _ => base,
     }
 }
 
@@ -234,8 +608,10 @@ pub const CACHE_READ_RATES: &[(&str, f64)] = &[
     ("o1", 7.50),
 ];
 
-/// Models whose whole request is billed at higher rates once its prompt is
-/// longer than a threshold: `(model, threshold_tokens, input_usd_per_1m,
+/// Built-in models whose whole request is billed at higher rates once its
+/// prompt is longer than a threshold. Models priced from `llm-prices` use
+/// that table's long-context tiers instead (Claude Haiku 5.5 among them), so
+/// this list only applies to [`PRICING`] rows: `(model, threshold_tokens, input_usd_per_1m,
 /// output_usd_per_1m)`. The prompt length counts every input token,
 /// including cache reads and writes, and cache rates scale from the higher
 /// input rate. Claude Haiku 5.5 pays $0.50 / $2.50 for prompts over 100,000
@@ -244,9 +620,10 @@ pub const LONG_PROMPT_RATES: &[(&str, u64, f64, f64)] = &[("claude-haiku-5-5", 1
 
 /// The price for one request of `model` whose prompt (input plus cache
 /// read and write tokens) is `prompt_tokens` long. Same as [`price_of`],
-/// except that a built-in model listed in [`LONG_PROMPT_RATES`] gets its
-/// higher rates when the prompt is over the threshold. A price set with
-/// [`set_price`] or [`load_prices_json`] is returned unchanged.
+/// except that a model with a long-context tier (in `llm-prices`, or in
+/// [`LONG_PROMPT_RATES`] for built-in rows) gets its higher rates when the
+/// prompt is over the threshold. A price set with [`set_price`] or
+/// [`load_prices_json`] is returned unchanged.
 ///
 /// ```
 /// use llm_cost_dashboard::cost::pricing::price_for_prompt;
@@ -257,20 +634,13 @@ pub const LONG_PROMPT_RATES: &[(&str, u64, f64, f64)] = &[("claude-haiku-5-5", 1
 /// assert!((long.input_per_1m - 0.50).abs() < 1e-12);
 /// ```
 pub fn price_for_prompt(model: &str, prompt_tokens: u64) -> Option<ModelPrice> {
-    let base = price_of(model)?;
-    let m = model.trim().to_ascii_lowercase();
-    let key = undated(&m).map(str::to_owned).unwrap_or(m);
-    let overridden = HAS_OVERRIDES.load(Ordering::Acquire)
-        && overrides()
-            .read()
-            .map(|o| o.contains_key(&key) || o.contains_key(&model.trim().to_ascii_lowercase()))
-            .unwrap_or(false);
-    if overridden {
-        return Some(base);
-    }
-    match LONG_PROMPT_RATES.iter().find(|(id, ..)| *id == key) {
-        Some(&(_, threshold, i, o)) if prompt_tokens > threshold => Some(ModelPrice::new(i, o)),
-        _ => Some(base),
+    match resolve(model)? {
+        Found::Custom(p, PriceSource::BuiltIn) => Some(builtin_for_prompt(model, p, prompt_tokens)),
+        Found::Custom(p, _) => Some(p),
+        Found::Table(p) => {
+            let long = p.long_context.is_some_and(|lc| prompt_tokens > lc.threshold_tokens);
+            ModelPrice::from_table(p, long).or_else(|| ModelPrice::from_table(p, false))
+        }
     }
 }
 
@@ -280,6 +650,11 @@ fn overrides() -> &'static RwLock<HashMap<String, ModelPrice>> {
 }
 
 /// Add or replace one model's price for this process.
+///
+/// Overrides come first in the lookup, ahead of `llm-prices` and the
+/// built-in table. An override for an undated id also covers its dated
+/// ids that have no override of their own: `set_price("gpt-4o", ..)` prices
+/// `gpt-4o-2024-08-06` too.
 ///
 /// ```
 /// use llm_cost_dashboard::cost::pricing::{compute_cost, set_price, ModelPrice};
@@ -308,7 +683,10 @@ pub fn clear_price_overrides() {
 ///
 /// - LiteLLM's `model_prices_and_context_window.json`: per-token USD costs
 ///   in `input_cost_per_token` / `output_cost_per_token`, plus optional
-///   `cache_read_input_token_cost` / `cache_creation_input_token_cost`.
+///   `cache_read_input_token_cost` / `cache_creation_input_token_cost`,
+///   `cache_creation_input_token_cost_above_1hr` (1-hour cache writes) and
+///   `input_cost_per_token_batches` / `output_cost_per_token_batches`
+///   (Batch API).
 ///   Entries without both input and output costs (such as `sample_spec`,
 ///   image or embedding models priced differently) are skipped.
 /// - A plain map: `{"my-model": {"input_usd_per_1m": 0.5, "output_usd_per_1m": 1.5}}`.
@@ -343,6 +721,13 @@ pub fn load_prices_json(json: &str) -> Result<usize, DashboardError> {
         }
         price.cache_read_per_1m = num(e, "cache_read_input_token_cost").map(|c| c * 1e6);
         price.cache_write_per_1m = num(e, "cache_creation_input_token_cost").map(|c| c * 1e6);
+        price.cache_write_1h_per_1m =
+            num(e, "cache_creation_input_token_cost_above_1hr").map(|c| c * 1e6);
+        if let Some((bi, bo)) =
+            num(e, "input_cost_per_token_batches").zip(num(e, "output_cost_per_token_batches"))
+        {
+            price = price.with_batch_rates(bi * 1e6, bo * 1e6);
+        }
         set_price(model, price);
         loaded += 1;
     }
@@ -390,30 +775,16 @@ fn builtin() -> &'static HashMap<String, ModelPrice> {
 /// Set once any override exists, so the common path skips the lock.
 static HAS_OVERRIDES: AtomicBool = AtomicBool::new(false);
 
-fn find(model: &str) -> Option<ModelPrice> {
-    let lower;
-    let key: &str = if model.bytes().any(|b| b.is_ascii_uppercase()) {
-        lower = model.to_ascii_lowercase();
-        &lower
-    } else {
-        model
-    };
-    if HAS_OVERRIDES.load(Ordering::Acquire) {
-        if let Ok(m) = overrides().read() {
-            if let Some(p) = m.get(key) {
-                return Some(*p);
-            }
-        }
-    }
-    builtin().get(key).copied()
-}
-
 /// The price for `model` if it is known: run-time overrides first, then the
-/// built-in [`PRICING`] table, then the same id without a trailing date.
-/// Case-insensitive. `None` for unknown models (no fallback).
+/// `llm-prices` table, then the built-in [`PRICING`] table, each also tried
+/// with the id's trailing date removed. Case-insensitive. `None` for unknown
+/// models (no fallback). Models priced from `llm-prices` come with their
+/// cache-read, 5-minute and 1-hour cache-write and batch rates filled in.
 pub fn price_of(model: &str) -> Option<ModelPrice> {
-    let model = model.trim();
-    find(model).or_else(|| undated(model).and_then(find))
+    match resolve(model)? {
+        Found::Custom(p, _) => Some(p),
+        Found::Table(p) => ModelPrice::from_table(p, false),
+    }
 }
 
 /// Like [`lookup`], but `None` for a model that is not priced instead of
@@ -569,6 +940,49 @@ mod tests {
         assert_eq!(lookup_known("zz-test-embedding"), None);
         assert!(load_prices_json("[1,2]").is_err());
         assert!(load_prices_json("not json").is_err());
+    }
+
+    #[test]
+    fn test_overrides_win_over_llm_prices_even_undated() {
+        // llm-prices resolves this id (prefix stripped)...
+        assert_eq!(price_source("eu.anthropic.claude-opus-4-20250514"), PriceSource::LlmPrices);
+        // ...but an override of its undated form wins, as before 1.4.0.
+        // (An id no other test prices, since overrides are process-wide.)
+        set_price("eu.anthropic.claude-opus-4", ModelPrice::new(1.0, 2.0));
+        assert_eq!(price_source("eu.anthropic.claude-opus-4-20250514"), PriceSource::Override);
+        assert_eq!(lookup_known("eu.anthropic.claude-opus-4-20250514"), Some((1.0, 2.0)));
+        assert_eq!(price_source("claude-opus-4-20250514"), PriceSource::LlmPrices);
+    }
+
+    #[test]
+    fn test_llm_prices_ids_and_rates() {
+        // Bedrock ids and provider prefixes resolve through llm-prices.
+        assert_eq!(lookup_known("us.anthropic.claude-sonnet-4-20250514-v1:0"), Some((3.0, 15.0)));
+        assert_eq!(lookup_known("models/gemini-2.5-pro"), Some((1.25, 10.0)));
+        let p = price_of("claude-opus-5-5").unwrap();
+        assert_eq!(p.cache_write_per_1m, Some(5.0));
+        assert_eq!(p.cache_write_1h_per_1m, Some(8.0));
+        assert_eq!((p.batch_input_per_1m, p.batch_output_per_1m), (Some(2.0), Some(10.0)));
+        // Gemini 2.5 Pro long-context tier (over 200,000 prompt tokens).
+        assert_eq!(price_for_prompt("gemini-2.5-pro", 200_001).map(|p| p.input_per_1m), Some(2.5));
+        assert_eq!(price_for_prompt("gemini-2.5-pro", 200_000).map(|p| p.input_per_1m), Some(1.25));
+        // Embedding rows have no output price: priced as input only.
+        let e = cost_usage("text-embedding-3-small", &Usage { input: 1_000_000, ..Usage::default() });
+        assert!((e.total - 0.02).abs() < 1e-12);
+        assert_eq!(e.source, PriceSource::LlmPrices);
+    }
+
+    #[test]
+    fn test_litellm_batch_and_1h_fields() {
+        let json = r#"{"zz-test-batch-model": {"input_cost_per_token": 2e-06, "output_cost_per_token": 8e-06,
+            "input_cost_per_token_batches": 1e-06, "output_cost_per_token_batches": 4e-06,
+            "cache_creation_input_token_cost_above_1hr": 5e-06}}"#;
+        assert_eq!(load_prices_json(json).unwrap(), 1);
+        let u = Usage { input: 1_000_000, output: 1_000_000, cache_write_1h: 1_000_000, batch: true, ..Usage::default() };
+        let c = cost_usage("zz-test-batch-model", &u);
+        assert!(c.batch_priced);
+        // $1 + $4, and the 1h write ($5) at the batch discount (50%).
+        assert!((c.total - 7.5).abs() < 1e-9, "{}", c.total);
     }
 
     #[test]

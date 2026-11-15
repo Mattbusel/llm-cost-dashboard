@@ -7,6 +7,74 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-14
+
+### Added
+
+- **Prices come from the [`llm-prices`](https://crates.io/crates/llm-prices) crate (1.1)** for
+  Anthropic, OpenAI, Google Gemini and DeepSeek: dated rows read from each provider's pricing
+  page, with cache-read, 5-minute and 1-hour cache-write, Batch API and long-context prices.
+  Updating the dependency updates the prices, so they no longer go stale between releases of
+  this crate (`cost::pricing::LLM_PRICES_TABLE_DATE` says how old they are). Lookup order:
+  `--prices` / `set_price` overrides, then `llm-prices`, then the built-in `PRICING` table
+  (still used for Mistral, Llama hosts, Grok, Cohere, Perplexity, Bedrock Nova, Qwen and older
+  OpenAI / Gemini ids), then the $5 / $15 fallback. Newly priced through it: GPT-5.1 to 5.6,
+  GPT-6, o1-pro, o3-pro, GPT-5 pro, Gemini 3.x, DeepSeek V4, and Bedrock / Vertex / prefixed
+  ids such as `us.anthropic.claude-sonnet-4-20250514-v1:0` and `models/gemini-2.5-pro`.
+- `cost::pricing::cost_usage(model, &Usage)`: the cost of one request split into input, output,
+  cache-read and cache-write dollars, with `long_context`, `batch_priced` and the
+  `PriceSource`. `Usage` is `llm_prices::Usage` (re-exported): uncached input, output, cache
+  reads, 5-minute and 1-hour cache writes, and a `batch` flag.
+- `cost::pricing::cost_usage_bucket(model, &usage, requests)`: the same for a bucket of many
+  requests, choosing the long-context tier from the average request.
+- `cost::pricing::price_source`, `llm_prices_row` (source URL and check date), `PriceSource`,
+  `UsageCost`; `ModelPrice` gains `cache_write_1h_per_1m`, `batch_input_per_1m`,
+  `batch_output_per_1m` and `with_batch_rates`.
+- **Batch API accounting.** `CostRecord::from_usage(model, provider, &usage, latency_ms)`
+  prices batch requests at batch rates (and cache tokens at the same discount). Log lines with
+  `"batch": true` are priced that way by `Ingester`, the dashboard and `--log-file`.
+  `RequestLog::ingest_line_usage` and `ingest::record_for_usage` expose the full counts.
+  A model with no listed batch price is billed at standard prices.
+- **`import` module and CLI flags for files other tools write.**
+  - `import::claude_code(dir)` / `llm-dash --claude-code [DIR]`: every Claude Code transcript
+    under `$CLAUDE_CONFIG_DIR/projects` or `~/.claude/projects` (subagent transcripts
+    included), each request once, tagged with its session id, with per-file counts.
+  - `import::openai_usage_csv(reader)` / `llm-dash --openai-usage-csv FILE`: OpenAI usage CSV
+    exports with the Usage API's column names (`model`, `input_tokens`, `output_tokens`,
+    `input_cached_tokens`, `num_model_requests`, `batch`, `service_tier`, `start_time`),
+    cached input and batch rows priced at their own rates. `service_tier = flex` rows bill at
+    Batch API rates (as OpenAI prices Flex processing); `priority` rows bill at standard rates,
+    which understates them, because the price table has no Priority processing rates. An empty
+    `num_model_requests` cell counts as one request.
+  - Unreadable transcript lines, including lines that are not valid UTF-8 (a session cut off
+    inside a multibyte character while Claude Code was writing it), are counted as rejected;
+    only an I/O failure stops the import.
+- `load_prices_json` (`--prices`) reads LiteLLM's `input_cost_per_token_batches`,
+  `output_cost_per_token_batches` and `cache_creation_input_token_cost_above_1hr`.
+- Fixture tests (`tests/import.rs`, `tests/fixtures/`) for both importers, with every expected
+  dollar amount worked out from the price table, including a transcript whose last line is cut
+  off inside a multibyte character.
+
+### Changed
+
+- `llm-prices` 1.x is a public dependency: `cost::pricing::Usage` is `llm_prices::Usage` and
+  `llm_prices_row` returns `&llm_prices::Price`. Taking an `llm-prices` release that changes
+  either type incompatibly (2.0 plans new `Usage` fields) will be a major release of this
+  crate. Build `Usage` values with `..Usage::default()`.
+- An override for an undated id (`set_price("gpt-4o", ..)` or a `--prices` entry) now also
+  prices its dated ids that have no override of their own (`gpt-4o-2024-08-06`), ahead of the
+  built-in and `llm-prices` rows. Before 1.4.0 a built-in row for the dated id won over the
+  undated override.
+- `examples/claude_code_spend.rs` uses `import::claude_code`.
+- Prompt-cache writes on OpenAI, Gemini and DeepSeek models (which list no separate write
+  price) are billed as input instead of 125% of input.
+- Cache reads on a model whose pricing page lists no cached-input price (`gpt-3.5-turbo`,
+  GPT-5 pro) bill at the input price instead of an assumed 10% of it.
+- `gpt-4o-2024-05-13` is priced at its own $5 / $15 instead of falling back to `gpt-4o`.
+- `tests/cross_check.rs`: llm-cost-cap 0.1 has stale prices for `gpt-5.4` and the Bedrock ids
+  of Claude Opus 4.7 / Haiku 4.5, which this crate now prices; they are listed as known stale,
+  and all mismatches are reported at once.
+
 ### Fixed
 - Claude prices: Sonnet 5.5 cache read is $0.10 per million tokens (0.05x input), not $0.20; added Claude Haiku 5.5 ($0.10 / $0.50, and $0.50 / $2.50 for the whole request when the prompt, cache tokens included, is over 100,000 tokens, via `price_for_prompt` and `LONG_PROMPT_RATES`). A test pins every Claude row to Anthropic's pricing page as of 2026-10-17.
 

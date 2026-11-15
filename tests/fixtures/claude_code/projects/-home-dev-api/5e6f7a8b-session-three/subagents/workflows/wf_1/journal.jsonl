@@ -1,0 +1,2 @@
+{"type":"started","agentId":"a2","key":"step-1","label":"lint","phase":"run"}
+{"type":"result","agentId":"a2","key":"step-1","result":"ok","toolsUsed":3}

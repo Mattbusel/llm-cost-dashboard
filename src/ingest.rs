@@ -19,22 +19,29 @@
 
 use std::io::BufRead;
 
+use crate::cost::pricing::Usage;
 use crate::cost::{CostLedger, CostRecord};
 use crate::error::DashboardError;
 use crate::log::{CacheTokens, LogEntry, RequestLog};
 
 /// Build the priced record for one parsed log entry.
 pub fn record_for(entry: &LogEntry, cache: CacheTokens) -> CostRecord {
-    let mut rec = CostRecord::new(
-        &entry.model,
-        &entry.provider,
-        entry.input_tokens,
-        entry.output_tokens,
-        entry.latency_ms,
-    );
-    if !cache.is_empty() {
-        rec = rec.with_cache_tiers(cache.read, cache.write_5m, cache.write_1h);
-    }
+    let usage = Usage {
+        input: entry.input_tokens,
+        output: entry.output_tokens,
+        cache_read: cache.read,
+        cache_write_5m: cache.write_5m,
+        cache_write_1h: cache.write_1h,
+        ..Usage::default()
+    };
+    record_for_usage(entry, &usage)
+}
+
+/// Build the priced record for one parsed log entry from the full token
+/// counts [`RequestLog::ingest_line_usage`] returned, Batch API flag
+/// included. The entry's model, provider, latency and timestamp are kept.
+pub fn record_for_usage(entry: &LogEntry, usage: &Usage) -> CostRecord {
+    let mut rec = CostRecord::from_usage(&entry.model, &entry.provider, usage, entry.latency_ms);
     rec.timestamp = entry.timestamp;
     rec
 }
@@ -73,13 +80,13 @@ impl Ingester {
     /// [`DashboardError::LogParseError`] for malformed lines; nothing is
     /// recorded and the ingester can keep going.
     pub fn ingest_line(&mut self, line: &str) -> Result<bool, DashboardError> {
-        let Some(cache) = self.log.ingest_line_detailed(line)? else {
+        let Some(usage) = self.log.ingest_line_usage(line)? else {
             return Ok(false);
         };
         let Some(entry) = self.log.all().last() else {
             return Ok(false);
         };
-        let rec = record_for(entry, cache);
+        let rec = record_for_usage(entry, &usage);
         self.ledger.add(rec)?;
         Ok(true)
     }
