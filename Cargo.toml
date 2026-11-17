@@ -1,6 +1,6 @@
 [package]
 name = "llm-cost-dashboard"
-version = "1.4.0"
+version = "1.4.1"
 edition = "2021"
 rust-version = "1.88"
 description = "Price every LLM API call from your logs, Claude Code transcripts or OpenAI usage exports (llm-prices table plus a built-in one, prompt caching, Batch API) and see spend, budgets and forecasts in a terminal dashboard, Prometheus or Rust"
@@ -18,16 +18,19 @@ include = ["src/**/*", "tests/**/*", "benches/**/*", "examples/**/*", "README.md
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
-# cargo binstall: prebuilt binaries from GitLab releases (Linux x86_64 and
-# Windows x86_64); other targets build from source.
-[package.metadata.binstall.overrides.x86_64-unknown-linux-gnu]
-pkg-url = "https://gitlab.com/mattbusel/llm-cost-dashboard/-/releases/v{ version }/downloads/llm-dash-linux-x86_64.tar.gz"
-bin-dir = "llm-dash-v{ version }-x86_64-unknown-linux-gnu/{ bin }{ binary-ext }"
+# `cargo binstall llm-cost-dashboard` downloads the prebuilt archive from the GitHub
+# release (.github/workflows/release.yml: llm-cost-dashboard-v<version>-<target>.tar.gz,
+# .zip on Windows, the llm-dash binary inside a folder of the same name) instead of
+# compiling. Targets without a prebuilt archive 404, and binstall builds from source.
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-v{ version }-{ target }.tar.gz"
+bin-dir = "{ name }-v{ version }-{ target }/{ bin }{ binary-ext }"
 pkg-fmt = "tgz"
+disabled-strategies = ["quick-install"]
 
 [package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
-pkg-url = "https://gitlab.com/mattbusel/llm-cost-dashboard/-/releases/v{ version }/downloads/llm-dash-windows-x86_64.exe"
-pkg-fmt = "bin"
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-v{ version }-{ target }.zip"
+pkg-fmt = "zip"
 
 [features]
 default = ["cli", "webhooks"]

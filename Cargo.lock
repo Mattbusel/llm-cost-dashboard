@@ -1251,7 +1251,7 @@ checksum = "eed10e87f410d7b7bb9e8ef71eba6514163c319da1e3e0ba104d3fe91f80a7af"
 
 [[package]]
 name = "llm-cost-dashboard"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "async-openai",
  "axum",

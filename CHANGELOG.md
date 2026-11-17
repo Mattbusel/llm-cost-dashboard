@@ -7,6 +7,16 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-11-16
+
+### Fixed
+
+- `cargo binstall llm-cost-dashboard` fetched from GitLab release URLs that no longer exist
+  (and asset names the GitHub release workflow does not produce), so it always fell back to
+  compiling. The binstall metadata now points at the GitHub release archives
+  (`llm-cost-dashboard-v<version>-<target>.tar.gz`, `.zip` on Windows) and the `llm-dash`
+  binary inside them, for Linux x86_64 and aarch64, macOS x86_64 and arm64, and Windows x86_64.
+
 ## [1.4.0] - 2026-11-14
 
 ### Added
