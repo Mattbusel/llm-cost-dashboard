@@ -197,10 +197,7 @@ impl HierarchicalAllocator {
     /// Generate chargeback reports.  `budgets` maps department names to their
     /// total budget in USD.  A `budget_remaining` of `None` means no budget was
     /// specified for that department.
-    pub fn generate_chargeback(
-        &self,
-        budgets: &HashMap<String, f64>,
-    ) -> Vec<ChargebackReport> {
+    pub fn generate_chargeback(&self, budgets: &HashMap<String, f64>) -> Vec<ChargebackReport> {
         // Group by (department, team).
         let mut buckets: HashMap<(String, String), f64> = HashMap::new();
         for record in &self.records {
@@ -218,9 +215,9 @@ impl HierarchicalAllocator {
             .into_iter()
             .map(|((dept, team), cost)| {
                 *dept_used.entry(dept.clone()).or_default() += cost;
-                let budget_remaining = budgets.get(&dept).map(|b| {
-                    b - *dept_used.get(&dept).unwrap_or(&0.0)
-                });
+                let budget_remaining = budgets
+                    .get(&dept)
+                    .map(|b| b - *dept_used.get(&dept).unwrap_or(&0.0));
                 ChargebackReport {
                     department: dept,
                     team,
@@ -230,11 +227,7 @@ impl HierarchicalAllocator {
             })
             .collect();
 
-        reports.sort_by(|a, b| {
-            a.department
-                .cmp(&b.department)
-                .then(a.team.cmp(&b.team))
-        });
+        reports.sort_by(|a, b| a.department.cmp(&b.department).then(a.team.cmp(&b.team)));
         reports
     }
 }
@@ -246,7 +239,10 @@ mod tests {
     use super::*;
 
     fn tag(k: &str, v: &str) -> CostTag {
-        CostTag { key: k.to_string(), value: v.to_string() }
+        CostTag {
+            key: k.to_string(),
+            value: v.to_string(),
+        }
     }
 
     fn build_hierarchy() -> AllocationHierarchy {
@@ -308,8 +304,14 @@ mod tests {
             model: "m".to_string(),
             timestamp: 0,
         };
-        assert_eq!(HierarchicalAllocator::tag_value(&record, "department"), Some("eng"));
-        assert_eq!(HierarchicalAllocator::tag_value(&record, "team"), Some("backend"));
+        assert_eq!(
+            HierarchicalAllocator::tag_value(&record, "department"),
+            Some("eng")
+        );
+        assert_eq!(
+            HierarchicalAllocator::tag_value(&record, "team"),
+            Some("backend")
+        );
         assert_eq!(HierarchicalAllocator::tag_value(&record, "missing"), None);
     }
 
@@ -358,16 +360,22 @@ mod tests {
         // Engineering total cost = 15, budget = 20 → remaining somewhere between 5 and 20
         // (exact value depends on team iteration order, but Engineering dept remaining
         //  after all teams should sum to 20 - 15 = 5)
-        let eng_reports: Vec<_> = reports.iter().filter(|r| r.department == "Engineering").collect();
+        let eng_reports: Vec<_> = reports
+            .iter()
+            .filter(|r| r.department == "Engineering")
+            .collect();
         assert!(!eng_reports.is_empty());
 
         // Marketing total cost = 8, budget = 6 → remaining should be negative.
-        let mkt_reports: Vec<_> = reports.iter().filter(|r| r.department == "Marketing").collect();
+        let mkt_reports: Vec<_> = reports
+            .iter()
+            .filter(|r| r.department == "Marketing")
+            .collect();
         assert!(!mkt_reports.is_empty());
         // At least one report should show that budget is exceeded.
-        let any_exceeded = mkt_reports.iter().any(|r| {
-            r.budget_remaining.map(|b| b < 0.0).unwrap_or(false)
-        });
+        let any_exceeded = mkt_reports
+            .iter()
+            .any(|r| r.budget_remaining.map(|b| b < 0.0).unwrap_or(false));
         assert!(any_exceeded, "Marketing budget should be exceeded");
     }
 }

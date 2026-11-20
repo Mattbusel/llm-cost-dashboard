@@ -182,13 +182,14 @@ impl SessionLedger {
         session_name: &str,
         cost_usd: f64,
     ) -> Option<SessionBudgetAlert> {
-        let entry = self.sessions.entry(session_name.to_string()).or_insert_with(|| {
-            SessionEntry {
+        let entry = self
+            .sessions
+            .entry(session_name.to_string())
+            .or_insert_with(|| SessionEntry {
                 session: Session::new(session_name),
                 spent_usd: 0.0,
                 record_count: 0,
-            }
-        });
+            });
 
         entry.spent_usd += cost_usd;
         entry.record_count += 1;

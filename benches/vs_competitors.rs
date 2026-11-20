@@ -8,7 +8,13 @@ use llm_cost_dashboard::cost::pricing::compute_cost;
 use llm_cost_dashboard::ingest::Ingester;
 
 /// Models both crates price.
-const MODELS: [&str; 5] = ["gpt-5", "gpt-5-mini", "gemini-2.5-pro", "claude-sonnet-4-6", "claude-sonnet-4-5"];
+const MODELS: [&str; 5] = [
+    "gpt-5",
+    "gpt-5-mini",
+    "gemini-2.5-pro",
+    "claude-sonnet-4-6",
+    "claude-sonnet-4-5",
+];
 
 fn price_one_call(c: &mut Criterion) {
     let mut g = c.benchmark_group("price_one_call");
@@ -48,7 +54,8 @@ fn ingest_lines(c: &mut Criterion) {
     g.bench_function("llm-cost-dashboard Ingester 10k lines", |b| {
         b.iter(|| {
             let mut ing = Ingester::new();
-            ing.ingest_reader(black_box(text.as_bytes())).map(|s| s.recorded)
+            ing.ingest_reader(black_box(text.as_bytes()))
+                .map(|s| s.recorded)
         })
     });
     g.finish();

@@ -26,14 +26,12 @@ pub struct Theme;
 impl Theme {
     /// Bold cyan style used for the top title bar.
     pub fn title() -> Style {
-        fg(Color::Cyan)
-            .add_modifier(Modifier::BOLD)
+        fg(Color::Cyan).add_modifier(Modifier::BOLD)
     }
 
     /// Bold yellow style used for table column headers.
     pub fn header() -> Style {
-        fg(Color::Yellow)
-            .add_modifier(Modifier::BOLD)
+        fg(Color::Yellow).add_modifier(Modifier::BOLD)
     }
 
     /// Green style indicating a healthy / within-budget state.

@@ -125,9 +125,10 @@ impl CronSchedule {
                 "SAT" => "6",
                 other => other,
             };
-            s_norm.parse::<u32>().map(Some).map_err(|_| {
-                DashboardError::Ledger(format!("invalid cron field '{s}' for {name}"))
-            })
+            s_norm
+                .parse::<u32>()
+                .map(Some)
+                .map_err(|_| DashboardError::Ledger(format!("invalid cron field '{s}' for {name}")))
         }
 
         Ok(Self {
@@ -266,7 +267,11 @@ impl Scheduler {
     ///
     /// Returns the path of the exported file on success, or `None` if no
     /// export was due.
-    pub fn tick(&mut self, ledger: &CostLedger, now: DateTime<Utc>) -> Option<Result<String, DashboardError>> {
+    pub fn tick(
+        &mut self,
+        ledger: &CostLedger,
+        now: DateTime<Utc>,
+    ) -> Option<Result<String, DashboardError>> {
         if !self.cron.matches(now) {
             return None;
         }
@@ -281,7 +286,11 @@ impl Scheduler {
         Some(self.run_export(ledger, now))
     }
 
-    fn run_export(&self, ledger: &CostLedger, now: DateTime<Utc>) -> Result<String, DashboardError> {
+    fn run_export(
+        &self,
+        ledger: &CostLedger,
+        now: DateTime<Utc>,
+    ) -> Result<String, DashboardError> {
         let filename = format!(
             "{}/llm-costs-{}.{}",
             self.schedule.output_dir,

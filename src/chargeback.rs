@@ -247,11 +247,10 @@ impl ChargebackEngine {
     pub fn allocate(&self, usage: &[CostAllocation]) -> Vec<ChargebackEntry> {
         let mut entries = Vec::new();
         for record in usage {
-            if let Some(rule) = self
-                .rules
-                .iter()
-                .find(|r| r.matcher.matches(&record.tenant, &record.model, record.cost))
-            {
+            if let Some(rule) = self.rules.iter().find(|r| {
+                r.matcher
+                    .matches(&record.tenant, &record.model, record.cost)
+            }) {
                 for (dept, pct) in &rule.allocation_pcts {
                     entries.push(ChargebackEntry {
                         original: record.clone(),
@@ -372,7 +371,11 @@ mod tests {
         let rule = ChargebackRule {
             id: "bad".to_string(),
             name: "bad".to_string(),
-            matcher: RuleMatcher { tenant_pattern: None, model_pattern: None, min_cost: None },
+            matcher: RuleMatcher {
+                tenant_pattern: None,
+                model_pattern: None,
+                min_cost: None,
+            },
             allocation_pcts: pcts,
         };
         assert!(matches!(
@@ -409,7 +412,10 @@ mod tests {
         let entries = engine.allocate(&records);
         let csv = engine.to_csv(&entries);
         let first_line = csv.lines().next().unwrap_or("");
-        assert!(first_line.starts_with("tenant,"), "header missing: {first_line}");
+        assert!(
+            first_line.starts_with("tenant,"),
+            "header missing: {first_line}"
+        );
     }
 
     #[test]

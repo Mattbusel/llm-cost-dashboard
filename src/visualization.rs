@@ -126,7 +126,11 @@ impl Histogram {
         let min = values.iter().cloned().fold(f64::INFINITY, f64::min);
         let max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
         let range = max - min;
-        let width = if range < f64::EPSILON { 1.0 } else { range / n as f64 };
+        let width = if range < f64::EPSILON {
+            1.0
+        } else {
+            range / n as f64
+        };
 
         let mut buckets: Vec<(f64, f64, usize)> = (0..n)
             .map(|i| {
@@ -280,7 +284,13 @@ impl BarChart {
         // Label row.
         let label_row: String = labels
             .iter()
-            .map(|l| format!("{:^width$}", &l[..l.len().min(col_width)], width = col_width))
+            .map(|l| {
+                format!(
+                    "{:^width$}",
+                    &l[..l.len().min(col_width)],
+                    width = col_width
+                )
+            })
             .collect();
         rows.push(label_row);
 
@@ -302,8 +312,12 @@ impl TimeSeriesPlot {
             return "(no data)".to_string();
         }
 
-        let (grid, x_min, x_max, y_min, y_max) =
-            Self::build_grid(std::slice::from_ref(&("", series.to_vec())), width, height, &['·']);
+        let (grid, x_min, x_max, y_min, y_max) = Self::build_grid(
+            std::slice::from_ref(&("", series.to_vec())),
+            width,
+            height,
+            &['·'],
+        );
 
         let mut rows: Vec<String> = Vec::new();
         for (row_idx, row) in grid.iter().enumerate() {
@@ -318,26 +332,26 @@ impl TimeSeriesPlot {
         let x_min_str = Self::fmt_ts(x_min);
         let x_max_str = Self::fmt_ts(x_max);
         let pad = width.saturating_sub(x_min_str.len() + x_max_str.len());
-        rows.push(format!("         {}{}{}", x_min_str, " ".repeat(pad), x_max_str));
+        rows.push(format!(
+            "         {}{}{}",
+            x_min_str,
+            " ".repeat(pad),
+            x_max_str
+        ));
 
         rows.join("\n")
     }
 
     /// Renders multiple time series on the same plot using different marker
     /// characters.
-    pub fn render_multi(
-        series: &[(&str, Vec<(u64, f64)>)],
-        width: usize,
-        height: usize,
-    ) -> String {
+    pub fn render_multi(series: &[(&str, Vec<(u64, f64)>)], width: usize, height: usize) -> String {
         if series.is_empty() || width < 2 || height < 2 {
             return "(no data)".to_string();
         }
 
         let markers: Vec<char> = vec!['·', '×', '+', '*', 'o', '#', '@', '%'];
         let owned: Vec<(&str, Vec<(u64, f64)>)> = series.to_vec();
-        let (grid, _, _, y_min, y_max) =
-            Self::build_grid(&owned, width, height, &markers);
+        let (grid, _, _, y_min, y_max) = Self::build_grid(&owned, width, height, &markers);
 
         let mut rows: Vec<String> = Vec::new();
         for (row_idx, row) in grid.iter().enumerate() {
@@ -372,8 +386,14 @@ impl TimeSeriesPlot {
         markers: &[char],
     ) -> (Vec<Vec<char>>, u64, u64, f64, f64) {
         // Determine global bounds.
-        let all_ts: Vec<u64> = series.iter().flat_map(|(_, pts)| pts.iter().map(|p| p.0)).collect();
-        let all_vals: Vec<f64> = series.iter().flat_map(|(_, pts)| pts.iter().map(|p| p.1)).collect();
+        let all_ts: Vec<u64> = series
+            .iter()
+            .flat_map(|(_, pts)| pts.iter().map(|p| p.0))
+            .collect();
+        let all_vals: Vec<f64> = series
+            .iter()
+            .flat_map(|(_, pts)| pts.iter().map(|p| p.1))
+            .collect();
 
         if all_ts.is_empty() {
             let grid = vec![vec![' '; width]; height];
@@ -528,7 +548,10 @@ mod tests {
         let values = &[10.0, 5.0, 8.0];
         let out = BarChart::render(labels, values, 60);
         for label in labels {
-            assert!(out.contains(label), "bar chart should contain label '{label}'");
+            assert!(
+                out.contains(label),
+                "bar chart should contain label '{label}'"
+            );
         }
     }
 
@@ -552,9 +575,7 @@ mod tests {
 
     #[test]
     fn time_series_plot_renders() {
-        let series: Vec<(u64, f64)> = vec![
-            (0, 1.0), (1, 2.0), (2, 1.5), (3, 3.0), (4, 2.5),
-        ];
+        let series: Vec<(u64, f64)> = vec![(0, 1.0), (1, 2.0), (2, 1.5), (3, 3.0), (4, 2.5)];
         let out = TimeSeriesPlot::render(&series, 20, 5);
         assert!(!out.is_empty());
         assert!(out.contains('|'));

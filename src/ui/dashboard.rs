@@ -70,7 +70,14 @@ pub fn render(
         ])
         .split(area);
 
-    render_title(frame, outer[0], ledger, budget, export_status, current_session);
+    render_title(
+        frame,
+        outer[0],
+        ledger,
+        budget,
+        export_status,
+        current_session,
+    );
 
     // Main content: left col + right col
     let main = Layout::default()
@@ -82,11 +89,11 @@ pub fn render(
     let left = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(5), // summary: 3 lines
-            Constraint::Length(3), // budget gauge
-            Constraint::Length(5), // forecast: 3 lines
+            Constraint::Length(5),                             // summary: 3 lines
+            Constraint::Length(3),                             // budget gauge
+            Constraint::Length(5),                             // forecast: 3 lines
             Constraint::Length(if has_cache { 6 } else { 3 }), // cache
-            Constraint::Min(3),    // savings: whatever is left
+            Constraint::Min(3),                                // savings: whatever is left
         ])
         .split(main[0]);
 
@@ -147,7 +154,10 @@ fn render_title(
         ),
     ];
     if let Some(session) = current_session {
-        spans.push(Span::styled(format!("   session: {session}"), Theme::warn()));
+        spans.push(Span::styled(
+            format!("   session: {session}"),
+            Theme::warn(),
+        ));
     }
     if let Some(status) = export_status {
         spans.push(Span::styled(format!("   Exported: {status}"), Theme::ok()));
@@ -404,12 +414,14 @@ fn render_anomalies(frame: &mut Frame, area: ratatui::layout::Rect, anomalies: &
                         format!("{:<18}", a.model.chars().take(18).collect::<String>()),
                         Theme::normal(),
                     ),
+                    Span::styled(format!("{} ", a.severity), style),
                     Span::styled(
-                        format!("{} ", a.severity),
-                        style,
-                    ),
-                    Span::styled(
-                        format!("actual=${:.6} expected=${:.6} ({})", a.actual, a.expected, a.ratio_str()),
+                        format!(
+                            "actual=${:.6} expected=${:.6} ({})",
+                            a.actual,
+                            a.expected,
+                            a.ratio_str()
+                        ),
                         style,
                     ),
                 ])
@@ -419,10 +431,7 @@ fn render_anomalies(frame: &mut Frame, area: ratatui::layout::Rect, anomalies: &
 
     let paragraph = Paragraph::new(lines).block(
         Block::default()
-            .title(format!(
-                " Cost Anomalies ({} detected) ",
-                anomalies.len()
-            ))
+            .title(format!(" Cost Anomalies ({} detected) ", anomalies.len()))
             .borders(Borders::ALL)
             .border_style(if anomalies.is_empty() {
                 Theme::border()
@@ -574,16 +583,21 @@ fn render_cache_breakdown(
     let records = ledger.records();
     let total_cache_read: u64 = records.iter().map(|r| r.cache.cache_read_tokens).sum();
     let total_cache_write: u64 = records.iter().map(|r| r.cache.cache_write_tokens).sum();
-    let cache_read_cost: f64 = records.iter().map(|r| r.cache.cache_read_cost_usd).sum::<f64>() + 0.0;
-    let cache_write_cost: f64 = records.iter().map(|r| r.cache.cache_write_cost_usd).sum::<f64>() + 0.0;
+    let cache_read_cost: f64 = records
+        .iter()
+        .map(|r| r.cache.cache_read_cost_usd)
+        .sum::<f64>()
+        + 0.0;
+    let cache_write_cost: f64 = records
+        .iter()
+        .map(|r| r.cache.cache_write_cost_usd)
+        .sum::<f64>()
+        + 0.0;
 
     let lines = vec![
         Line::from(vec![
             Span::styled("Cache reads:  ", Theme::dim()),
-            Span::styled(
-                format!("{total_cache_read} tok"),
-                Theme::ok(),
-            ),
+            Span::styled(format!("{total_cache_read} tok"), Theme::ok()),
         ]),
         Line::from(vec![
             Span::styled("Read cost:    ", Theme::dim()),
@@ -591,10 +605,7 @@ fn render_cache_breakdown(
         ]),
         Line::from(vec![
             Span::styled("Cache writes: ", Theme::dim()),
-            Span::styled(
-                format!("{total_cache_write} tok"),
-                Theme::warn(),
-            ),
+            Span::styled(format!("{total_cache_write} tok"), Theme::warn()),
         ]),
         Line::from(vec![
             Span::styled("Write cost:   ", Theme::dim()),

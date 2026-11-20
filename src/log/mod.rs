@@ -172,7 +172,13 @@ pub struct IncomingRecord {
     #[serde(default)]
     pub error: Option<String>,
     /// Optional request time.  See the type-level docs for accepted formats.
-    #[serde(default, alias = "ts", alias = "time", alias = "created_at", alias = "created")]
+    #[serde(
+        default,
+        alias = "ts",
+        alias = "time",
+        alias = "created_at",
+        alias = "created"
+    )]
     pub timestamp: Option<serde_json::Value>,
 }
 
@@ -206,11 +212,8 @@ impl CacheTokens {
 pub fn cache_tokens(value: &serde_json::Value) -> CacheTokens {
     let n = |v: Option<&serde_json::Value>| v.and_then(serde_json::Value::as_u64).unwrap_or(0);
     let usage = value.get("usage");
-    let from = |top: &str, nested: &str| {
-        value
-            .get(top)
-            .or_else(|| usage.and_then(|u| u.get(nested)))
-    };
+    let from =
+        |top: &str, nested: &str| value.get(top).or_else(|| usage.and_then(|u| u.get(nested)));
     let read = n(from("cache_read_tokens", "cache_read_input_tokens"));
     let write_total = n(from("cache_write_tokens", "cache_creation_input_tokens"));
     let split = usage.and_then(|u| u.get("cache_creation"));
@@ -281,7 +284,10 @@ pub fn normalize_usage(mut value: serde_json::Value) -> serde_json::Value {
         .and_then(|d| d.get("cached_tokens"))
         .and_then(serde_json::Value::as_u64)
         .unwrap_or(0);
-    if openai_cached > 0 && !obj.contains_key("input_tokens") && !obj.contains_key("cache_read_tokens") {
+    if openai_cached > 0
+        && !obj.contains_key("input_tokens")
+        && !obj.contains_key("cache_read_tokens")
+    {
         let prompt = obj
             .get("prompt_tokens")
             .or_else(|| usage.as_ref().and_then(|u| u.get("prompt_tokens")))
@@ -465,7 +471,8 @@ impl RequestLog {
         let mut value = normalize_usage(value);
         if claude_code {
             let no_usage = value.get("input_tokens").is_none();
-            let synthetic = value.get("model").and_then(serde_json::Value::as_str) == Some("<synthetic>");
+            let synthetic =
+                value.get("model").and_then(serde_json::Value::as_str) == Some("<synthetic>");
             if no_usage || synthetic {
                 return Ok(None);
             }
@@ -609,8 +616,14 @@ mod tests {
     fn test_ingest_uses_timestamp_field() {
         let mut log = RequestLog::new();
         log.ingest_line(r#"{"model":"m","input_tokens":1,"output_tokens":1,"latency_ms":1,"timestamp":"2024-01-08T10:00:00Z"}"#).unwrap();
-        log.ingest_line(r#"{"model":"m","input_tokens":1,"output_tokens":1,"latency_ms":1,"ts":1704067200}"#).unwrap();
-        log.ingest_line(r#"{"model":"m","input_tokens":1,"output_tokens":1,"latency_ms":1,"ts":1704067200000}"#).unwrap();
+        log.ingest_line(
+            r#"{"model":"m","input_tokens":1,"output_tokens":1,"latency_ms":1,"ts":1704067200}"#,
+        )
+        .unwrap();
+        log.ingest_line(
+            r#"{"model":"m","input_tokens":1,"output_tokens":1,"latency_ms":1,"ts":1704067200000}"#,
+        )
+        .unwrap();
         let all = log.all();
         assert_eq!(all[0].timestamp.to_rfc3339(), "2024-01-08T10:00:00+00:00");
         assert_eq!(all[1].timestamp.timestamp(), 1_704_067_200);
@@ -648,9 +661,15 @@ mod tests {
         log.ingest_line(r#"{"model":"gpt-4o","prompt_tokens":5,"completion_tokens":2}"#)
             .unwrap();
         let e = log.all();
-        assert_eq!((e[0].input_tokens, e[0].output_tokens, e[0].latency_ms), (12, 7, 0));
+        assert_eq!(
+            (e[0].input_tokens, e[0].output_tokens, e[0].latency_ms),
+            (12, 7, 0)
+        );
         assert_eq!(e[0].timestamp.timestamp(), 1_790_000_000);
-        assert_eq!((e[1].input_tokens, e[1].output_tokens, e[1].latency_ms), (30, 9, 410));
+        assert_eq!(
+            (e[1].input_tokens, e[1].output_tokens, e[1].latency_ms),
+            (30, 9, 410)
+        );
         assert_eq!((e[2].input_tokens, e[2].output_tokens), (5, 2));
     }
 
@@ -661,7 +680,14 @@ mod tests {
     fn test_claude_code_lines() {
         let mut log = RequestLog::new();
         let c = log.ingest_line_detailed(CC_ASSISTANT).unwrap().unwrap();
-        assert_eq!(c, CacheTokens { read: 30000, write_5m: 0, write_1h: 1000 });
+        assert_eq!(
+            c,
+            CacheTokens {
+                read: 30000,
+                write_5m: 0,
+                write_1h: 1000
+            }
+        );
         let e = &log.all()[0];
         assert_eq!(e.model, "claude-sonnet-4-5-20250929");
         assert_eq!(e.provider, "anthropic");
@@ -699,10 +725,24 @@ mod tests {
             r#"{"usage":{"cache_read_input_tokens":5,"cache_creation_input_tokens":7}}"#,
         )
         .unwrap();
-        assert_eq!(cache_tokens(&v), CacheTokens { read: 5, write_5m: 7, write_1h: 0 });
+        assert_eq!(
+            cache_tokens(&v),
+            CacheTokens {
+                read: 5,
+                write_5m: 7,
+                write_1h: 0
+            }
+        );
         let v: serde_json::Value =
             serde_json::from_str(r#"{"cache_read_tokens":1,"cache_write_tokens":2}"#).unwrap();
-        assert_eq!(cache_tokens(&v), CacheTokens { read: 1, write_5m: 2, write_1h: 0 });
+        assert_eq!(
+            cache_tokens(&v),
+            CacheTokens {
+                read: 1,
+                write_5m: 2,
+                write_1h: 0
+            }
+        );
         assert!(cache_tokens(&serde_json::json!({})).is_empty());
     }
 
@@ -713,7 +753,10 @@ mod tests {
             r#"{"model":"m","input_tokens":1,"output_tokens":2,"latency_ms":3,"usage":{"prompt_tokens":9,"completion_tokens":9}}"#,
         )
         .unwrap();
-        assert_eq!((log.all()[0].input_tokens, log.all()[0].output_tokens), (1, 2));
+        assert_eq!(
+            (log.all()[0].input_tokens, log.all()[0].output_tokens),
+            (1, 2)
+        );
     }
 
     #[test]
@@ -831,8 +874,7 @@ mod tests {
     #[test]
     fn test_header_detection_openai_via_uuid_request_id() {
         let mut entry = LogEntry::new("gpt-4o", "unknown", 100, 50, 10);
-        entry
-            .apply_header_detection([("x-request-id", "550e8400-e29b-41d4-a716-446655440000")]);
+        entry.apply_header_detection([("x-request-id", "550e8400-e29b-41d4-a716-446655440000")]);
         assert_eq!(entry.detected_provider.as_deref(), Some("openai"));
     }
 
@@ -875,7 +917,9 @@ mod tests {
 
     #[test]
     fn test_looks_like_uuid_valid() {
-        assert!(super::looks_like_uuid("550e8400-e29b-41d4-a716-446655440000"));
+        assert!(super::looks_like_uuid(
+            "550e8400-e29b-41d4-a716-446655440000"
+        ));
     }
 
     #[test]
@@ -885,7 +929,9 @@ mod tests {
 
     #[test]
     fn test_looks_like_uuid_invalid_non_hex() {
-        assert!(!super::looks_like_uuid("zzzzzzzz-e29b-41d4-a716-446655440000"));
+        assert!(!super::looks_like_uuid(
+            "zzzzzzzz-e29b-41d4-a716-446655440000"
+        ));
     }
 
     #[test]

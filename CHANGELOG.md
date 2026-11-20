@@ -5,6 +5,11 @@ All notable changes to `llm-cost-dashboard` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.4.2 (2026-11-20)
+
+- README opens with the side this crate takes: your provider's billing page is late and does not know which agent spent it. Why it exists, why it beats the usual approach, why adopt it today, who it is for and the tradeoffs made on purpose.
+- crates.io description and keywords say the same thing.
+
 ## [Unreleased]
 
 ## [1.4.1] - 2026-11-16

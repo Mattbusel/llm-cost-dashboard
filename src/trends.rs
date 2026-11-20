@@ -102,10 +102,13 @@ impl TrendAnalyzer {
     /// `timestamp_secs` is a Unix timestamp (seconds since the epoch, UTC).
     pub fn record(&mut self, timestamp_secs: u64, model: &str, cost_usd: f64) {
         let date = Self::date_string(timestamp_secs);
-        let entry = self.daily_spend.entry(date.clone()).or_insert_with(|| DailySpend {
-            date,
-            ..Default::default()
-        });
+        let entry = self
+            .daily_spend
+            .entry(date.clone())
+            .or_insert_with(|| DailySpend {
+                date,
+                ..Default::default()
+            });
         entry.total_usd += cost_usd;
         entry.request_count += 1;
         *entry.by_model.entry(model.to_string()).or_insert(0.0) += cost_usd;
@@ -170,13 +173,21 @@ impl TrendAnalyzer {
 
         let peak_day = current_days
             .iter()
-            .max_by(|a, b| a.total_usd.partial_cmp(&b.total_usd).unwrap_or(std::cmp::Ordering::Equal))
+            .max_by(|a, b| {
+                a.total_usd
+                    .partial_cmp(&b.total_usd)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .map(|d| (*d).clone());
 
         let slowest_day = current_days
             .iter()
             .filter(|d| d.total_usd > 0.0)
-            .min_by(|a, b| a.total_usd.partial_cmp(&b.total_usd).unwrap_or(std::cmp::Ordering::Equal))
+            .min_by(|a, b| {
+                a.total_usd
+                    .partial_cmp(&b.total_usd)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .map(|d| (*d).clone());
 
         // Top model across the current period.
@@ -381,8 +392,8 @@ impl TrendAnalyzer {
         }
         (0..target_len)
             .map(|i| {
-                let src_idx = (i as f64 / (target_len - 1) as f64 * (src.len() - 1) as f64)
-                    .round() as usize;
+                let src_idx =
+                    (i as f64 / (target_len - 1) as f64 * (src.len() - 1) as f64).round() as usize;
                 src[src_idx.min(src.len() - 1)]
             })
             .collect()
@@ -420,7 +431,8 @@ impl TrendAnalyzer {
             4 | 6 | 9 | 11 => 30,
             2 => {
                 // Gregorian leap year.
-                if (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400) {
+                if (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400)
+                {
                     29
                 } else {
                     28

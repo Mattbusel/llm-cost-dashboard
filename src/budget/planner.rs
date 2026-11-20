@@ -83,13 +83,17 @@ impl AllocationStatus {
     pub fn from_spend(actual_usd: f64, budgeted_usd: f64) -> Self {
         if budgeted_usd <= 0.0 {
             if actual_usd > 0.0 {
-                return Self::Exceeded { overage_usd: actual_usd };
+                return Self::Exceeded {
+                    overage_usd: actual_usd,
+                };
             }
             return Self::OnTrack;
         }
         let pct = actual_usd / budgeted_usd;
         if actual_usd >= budgeted_usd {
-            Self::Exceeded { overage_usd: actual_usd - budgeted_usd }
+            Self::Exceeded {
+                overage_usd: actual_usd - budgeted_usd,
+            }
         } else if pct >= 0.80 {
             Self::AtRisk { pct_used: pct }
         } else {
@@ -177,7 +181,11 @@ impl BudgetPlanner {
             })
             .collect();
 
-        BudgetPlan { period, total_usd, allocations: allocs }
+        BudgetPlan {
+            period,
+            total_usd,
+            allocations: allocs,
+        }
     }
 
     /// Reconcile `plan` against `actuals` (a map of allocation name → actual USD).
@@ -242,10 +250,7 @@ mod tests {
         BudgetPlanner::create(
             BudgetPeriod::Monthly,
             1000.0,
-            vec![
-                ("GPT-4o".to_string(), 60.0),
-                ("Claude".to_string(), 40.0),
-            ],
+            vec![("GPT-4o".to_string(), 60.0), ("Claude".to_string(), 40.0)],
         )
     }
 
@@ -263,25 +268,34 @@ mod tests {
 
     #[test]
     fn status_on_track_when_under_80_pct() {
-        assert_eq!(AllocationStatus::from_spend(79.0, 100.0), AllocationStatus::OnTrack);
+        assert_eq!(
+            AllocationStatus::from_spend(79.0, 100.0),
+            AllocationStatus::OnTrack
+        );
     }
 
     #[test]
     fn status_at_risk_between_80_and_100_pct() {
         let s = AllocationStatus::from_spend(85.0, 100.0);
-        assert!(matches!(s, AllocationStatus::AtRisk { pct_used } if (pct_used - 0.85).abs() < 1e-9));
+        assert!(
+            matches!(s, AllocationStatus::AtRisk { pct_used } if (pct_used - 0.85).abs() < 1e-9)
+        );
     }
 
     #[test]
     fn status_exceeded_when_over_budget() {
         let s = AllocationStatus::from_spend(120.0, 100.0);
-        assert!(matches!(s, AllocationStatus::Exceeded { overage_usd } if (overage_usd - 20.0).abs() < 1e-9));
+        assert!(
+            matches!(s, AllocationStatus::Exceeded { overage_usd } if (overage_usd - 20.0).abs() < 1e-9)
+        );
     }
 
     #[test]
     fn status_exactly_at_budget_is_exceeded() {
         let s = AllocationStatus::from_spend(100.0, 100.0);
-        assert!(matches!(s, AllocationStatus::Exceeded { overage_usd } if overage_usd.abs() < 1e-9));
+        assert!(
+            matches!(s, AllocationStatus::Exceeded { overage_usd } if overage_usd.abs() < 1e-9)
+        );
     }
 
     #[test]
@@ -352,7 +366,10 @@ mod tests {
         let mut actuals = HashMap::new();
         actuals.insert("GPT-4o".to_string(), 700.0); // exceeds 600
         BudgetPlanner::reconcile(&mut plan, &actuals);
-        assert!(matches!(plan.allocations[0].status, AllocationStatus::Exceeded { .. }));
+        assert!(matches!(
+            plan.allocations[0].status,
+            AllocationStatus::Exceeded { .. }
+        ));
     }
 
     #[test]
@@ -361,7 +378,10 @@ mod tests {
         let mut actuals = HashMap::new();
         actuals.insert("GPT-4o".to_string(), 500.0); // 83% of 600
         BudgetPlanner::reconcile(&mut plan, &actuals);
-        assert!(matches!(plan.allocations[0].status, AllocationStatus::AtRisk { .. }));
+        assert!(matches!(
+            plan.allocations[0].status,
+            AllocationStatus::AtRisk { .. }
+        ));
     }
 
     #[test]

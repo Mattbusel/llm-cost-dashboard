@@ -114,7 +114,10 @@ impl TokenOptimizer {
         let mut lines = Vec::new();
         for line in text.lines() {
             let trimmed = line.trim();
-            if trimmed.starts_with("Example") || trimmed.starts_with('-') || trimmed.starts_with('*') {
+            if trimmed.starts_with("Example")
+                || trimmed.starts_with('-')
+                || trimmed.starts_with('*')
+            {
                 if example_count < max_examples {
                     example_count += 1;
                     lines.push(line);
@@ -139,13 +142,17 @@ impl TokenOptimizer {
                 let lower_rem = remaining.to_lowercase();
                 if let Some(pos) = lower_rem.find(pattern_lower.as_str()) {
                     // Check word boundaries
-                    let before_ok = pos == 0 || !remaining.as_bytes()[pos - 1].is_ascii_alphanumeric();
+                    let before_ok =
+                        pos == 0 || !remaining.as_bytes()[pos - 1].is_ascii_alphanumeric();
                     let after_pos = pos + filler.len();
-                    let after_ok = after_pos >= remaining.len() || !remaining.as_bytes()[after_pos].is_ascii_alphanumeric();
+                    let after_ok = after_pos >= remaining.len()
+                        || !remaining.as_bytes()[after_pos].is_ascii_alphanumeric();
                     if before_ok && after_ok {
                         new_result.push_str(&remaining[..pos]);
                         // Skip trailing space if present
-                        let skip_end = if after_pos < remaining.len() && remaining.as_bytes()[after_pos] == b' ' {
+                        let skip_end = if after_pos < remaining.len()
+                            && remaining.as_bytes()[after_pos] == b' '
+                        {
                             after_pos + 1
                         } else {
                             after_pos
@@ -334,7 +341,11 @@ mod tests {
         let result = TokenOptimizer::remove_duplicate_sentences(text);
         // Should appear only once
         let count = result.matches("Hello world").count();
-        assert_eq!(count, 1, "Duplicate sentence should be removed, got: {}", result);
+        assert_eq!(
+            count, 1,
+            "Duplicate sentence should be removed, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -342,24 +353,44 @@ mod tests {
         let fillers = vec!["basically".to_string(), "just".to_string()];
         let text = "It is basically just a test.";
         let result = TokenOptimizer::remove_filler_words(text, &fillers);
-        assert!(!result.contains("basically"), "filler 'basically' should be removed");
-        assert!(!result.contains(" just "), "filler 'just' should be removed");
+        assert!(
+            !result.contains("basically"),
+            "filler 'basically' should be removed"
+        );
+        assert!(
+            !result.contains(" just "),
+            "filler 'just' should be removed"
+        );
     }
 
     #[test]
     fn test_whitespace_compressed() {
         let text = "Hello    world\n\n\nfoo";
         let result = TokenOptimizer::compress_whitespace(text);
-        assert!(!result.contains("    "), "multiple spaces should be collapsed");
-        assert!(!result.contains("\n\n"), "multiple newlines should be collapsed");
+        assert!(
+            !result.contains("    "),
+            "multiple spaces should be collapsed"
+        );
+        assert!(
+            !result.contains("\n\n"),
+            "multiple newlines should be collapsed"
+        );
     }
 
     #[test]
     fn test_numbers_abbreviated() {
         let text = "We have 1000 items and 2000000 users.";
         let result = TokenOptimizer::abbreviate_numbers(text);
-        assert!(result.contains("1K"), "1000 should become 1K, got: {}", result);
-        assert!(result.contains("2M"), "2000000 should become 2M, got: {}", result);
+        assert!(
+            result.contains("1K"),
+            "1000 should become 1K, got: {}",
+            result
+        );
+        assert!(
+            result.contains("2M"),
+            "2000000 should become 2M, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -367,10 +398,17 @@ mod tests {
         // A text with duplicate sentences will shrink
         let text = "Hello world. Hello world. Hello world. Hello world. Extra sentence here.";
         let (_, result) = TokenOptimizer::optimize_all(text);
-        assert!(result.savings_pct >= 0.0, "savings_pct must be non-negative");
-        assert!(result.optimized_tokens <= result.original_tokens, "optimization should not increase tokens");
+        assert!(
+            result.savings_pct >= 0.0,
+            "savings_pct must be non-negative"
+        );
+        assert!(
+            result.optimized_tokens <= result.original_tokens,
+            "optimization should not increase tokens"
+        );
         // Verify formula
-        let expected = (1.0 - result.optimized_tokens as f64 / result.original_tokens as f64) * 100.0;
+        let expected =
+            (1.0 - result.optimized_tokens as f64 / result.original_tokens as f64) * 100.0;
         assert!((result.savings_pct - expected).abs() < 1e-6);
     }
 }

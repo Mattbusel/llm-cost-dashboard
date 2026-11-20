@@ -53,10 +53,7 @@ impl EfficiencyAnalyzer {
 
     /// Record a single model run.
     pub fn record_run(&mut self, run: ModelRun) {
-        self.runs
-            .entry(run.model_id.clone())
-            .or_default()
-            .push(run);
+        self.runs.entry(run.model_id.clone()).or_default().push(run);
     }
 
     /// Compute aggregate [`EfficiencyMetrics`] for `model_id` across all
@@ -98,10 +95,7 @@ impl EfficiencyAnalyzer {
             / n;
 
         // cost per quality point (only runs with quality scores).
-        let quality_runs: Vec<_> = runs
-            .iter()
-            .filter(|r| r.quality_score.is_some())
-            .collect();
+        let quality_runs: Vec<_> = runs.iter().filter(|r| r.quality_score.is_some()).collect();
 
         let cost_per_quality_point = if quality_runs.is_empty() {
             None
@@ -110,7 +104,11 @@ impl EfficiencyAnalyzer {
                 .iter()
                 .map(|r| {
                     let q = r.quality_score.unwrap_or(0.0);
-                    if q == 0.0 { r.cost_usd } else { r.cost_usd / q }
+                    if q == 0.0 {
+                        r.cost_usd
+                    } else {
+                        r.cost_usd / q
+                    }
                 })
                 .sum();
             Some(sum / quality_runs.len() as f64)
@@ -155,10 +153,8 @@ impl EfficiencyAnalyzer {
             .runs
             .iter()
             .filter_map(|(id, runs)| {
-                let quality_runs: Vec<_> = runs
-                    .iter()
-                    .filter(|r| r.quality_score.is_some())
-                    .collect();
+                let quality_runs: Vec<_> =
+                    runs.iter().filter(|r| r.quality_score.is_some()).collect();
                 if quality_runs.is_empty() {
                     return None;
                 }
@@ -213,7 +209,11 @@ impl EfficiencyAnalyzer {
         let mean_y = ys.iter().sum::<f64>() / n;
 
         let ss_xx: f64 = xs.iter().map(|x| (x - mean_x).powi(2)).sum();
-        let ss_xy: f64 = xs.iter().zip(ys.iter()).map(|(x, y)| (x - mean_x) * (y - mean_y)).sum();
+        let ss_xy: f64 = xs
+            .iter()
+            .zip(ys.iter())
+            .map(|(x, y)| (x - mean_x) * (y - mean_y))
+            .sum();
 
         if ss_xx == 0.0 {
             return None; // all x values identical — degenerate
@@ -356,17 +356,29 @@ mod tests {
         analyzer.record_run(ModelRun {
             run_id: "r1".to_string(),
             model_id: "m".to_string(),
-            tokens_in: 50, tokens_out: 50, latency_ms: 210, cost_usd: 0.01, quality_score: None,
+            tokens_in: 50,
+            tokens_out: 50,
+            latency_ms: 210,
+            cost_usd: 0.01,
+            quality_score: None,
         });
         analyzer.record_run(ModelRun {
             run_id: "r2".to_string(),
             model_id: "m".to_string(),
-            tokens_in: 100, tokens_out: 100, latency_ms: 410, cost_usd: 0.02, quality_score: None,
+            tokens_in: 100,
+            tokens_out: 100,
+            latency_ms: 410,
+            cost_usd: 0.02,
+            quality_score: None,
         });
         analyzer.record_run(ModelRun {
             run_id: "r3".to_string(),
             model_id: "m".to_string(),
-            tokens_in: 150, tokens_out: 150, latency_ms: 610, cost_usd: 0.03, quality_score: None,
+            tokens_in: 150,
+            tokens_out: 150,
+            latency_ms: 610,
+            cost_usd: 0.03,
+            quality_score: None,
         });
         let (slope, intercept) = analyzer.regression_analysis("m").expect("must exist");
         assert!((slope - 2.0).abs() < 1e-6, "slope={slope}");
@@ -396,7 +408,8 @@ mod tests {
             analyzer.record_run(ModelRun {
                 run_id: format!("r{i}"),
                 model_id: "m".to_string(),
-                tokens_in: 100, tokens_out: 100,
+                tokens_in: 100,
+                tokens_out: 100,
                 latency_ms: i,
                 cost_usd: 0.001,
                 quality_score: None,

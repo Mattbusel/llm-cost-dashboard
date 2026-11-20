@@ -179,8 +179,7 @@ impl EWMADetector {
         };
 
         // Update EWMA mean and variance
-        self.variance =
-            (1.0 - self.alpha) * (self.variance + self.alpha * residual * residual);
+        self.variance = (1.0 - self.alpha) * (self.variance + self.alpha * residual * residual);
         self.mean = self.alpha * value + (1.0 - self.alpha) * self.mean;
         self.observations += 1;
 

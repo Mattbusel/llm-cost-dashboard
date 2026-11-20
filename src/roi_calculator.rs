@@ -127,8 +127,7 @@ impl RoiCalculator {
     /// Compute ROI metrics for a single deployment.
     pub fn compute(deployment: &LlmDeployment) -> RoiMetrics {
         let months = deployment.months_running as f64;
-        let total_invested =
-            deployment.deployment_cost_usd + deployment.monthly_cost_usd * months;
+        let total_invested = deployment.deployment_cost_usd + deployment.monthly_cost_usd * months;
         let monthly_value: f64 = deployment
             .value_streams
             .iter()
@@ -191,10 +190,8 @@ impl RoiCalculator {
     /// Compute ROI for all deployments and return them sorted by `roi_pct`
     /// descending (best first).
     pub fn compare_deployments(deployments: &[LlmDeployment]) -> Vec<(&LlmDeployment, RoiMetrics)> {
-        let mut results: Vec<(&LlmDeployment, RoiMetrics)> = deployments
-            .iter()
-            .map(|d| (d, Self::compute(d)))
-            .collect();
+        let mut results: Vec<(&LlmDeployment, RoiMetrics)> =
+            deployments.iter().map(|d| (d, Self::compute(d))).collect();
         results.sort_by(|a, b| {
             b.1.roi_pct
                 .partial_cmp(&a.1.roi_pct)
@@ -226,11 +223,9 @@ impl RoiCalculator {
                 ValueStream::CostSaving { usd_per_month } => ValueStream::CostSaving {
                     usd_per_month: usd_per_month * value_factor,
                 },
-                ValueStream::RevenueGenerated { usd_per_month } => {
-                    ValueStream::RevenueGenerated {
-                        usd_per_month: usd_per_month * value_factor,
-                    }
-                }
+                ValueStream::RevenueGenerated { usd_per_month } => ValueStream::RevenueGenerated {
+                    usd_per_month: usd_per_month * value_factor,
+                },
                 ValueStream::TimeSaved {
                     hours_per_month,
                     hourly_rate_usd,
@@ -273,7 +268,9 @@ mod tests {
             name: "Support Bot".to_string(),
             monthly_cost_usd: 500.0,
             value_streams: vec![
-                ValueStream::CostSaving { usd_per_month: 2_000.0 },
+                ValueStream::CostSaving {
+                    usd_per_month: 2_000.0,
+                },
                 ValueStream::TimeSaved {
                     hours_per_month: 40.0,
                     hourly_rate_usd: 50.0,
@@ -288,7 +285,9 @@ mod tests {
         LlmDeployment {
             name: "Loss Maker".to_string(),
             monthly_cost_usd: 3_000.0,
-            value_streams: vec![ValueStream::CostSaving { usd_per_month: 500.0 }],
+            value_streams: vec![ValueStream::CostSaving {
+                usd_per_month: 500.0,
+            }],
             deployment_cost_usd: 10_000.0,
             months_running: 3,
         }
@@ -296,13 +295,17 @@ mod tests {
 
     #[test]
     fn test_monthly_value_cost_saving() {
-        let vs = ValueStream::CostSaving { usd_per_month: 1_000.0 };
+        let vs = ValueStream::CostSaving {
+            usd_per_month: 1_000.0,
+        };
         assert!((vs.monthly_value() - 1_000.0).abs() < 1e-6);
     }
 
     #[test]
     fn test_monthly_value_revenue() {
-        let vs = ValueStream::RevenueGenerated { usd_per_month: 500.0 };
+        let vs = ValueStream::RevenueGenerated {
+            usd_per_month: 500.0,
+        };
         assert!((vs.monthly_value() - 500.0).abs() < 1e-6);
     }
 

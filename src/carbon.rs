@@ -79,23 +79,23 @@ impl Region {
     /// Carbon intensity of the electricity grid in this region (gCO2e/kWh).
     pub fn carbon_intensity_g_per_kwh(self) -> f64 {
         match self {
-            Region::UsEast       => 350.0,
-            Region::UsWest       => 130.0,
-            Region::EuWest       => 200.0,
-            Region::EuNorth      => 30.0,
-            Region::AsiaPacific  => 600.0,
-            Region::GlobalAverage=> 450.0,
+            Region::UsEast => 350.0,
+            Region::UsWest => 130.0,
+            Region::EuWest => 200.0,
+            Region::EuNorth => 30.0,
+            Region::AsiaPacific => 600.0,
+            Region::GlobalAverage => 450.0,
         }
     }
 
     /// Display name.
     pub fn display_name(self) -> &'static str {
         match self {
-            Region::UsEast        => "US East",
-            Region::UsWest        => "US West",
-            Region::EuWest        => "EU West",
-            Region::EuNorth       => "EU North (Nordics)",
-            Region::AsiaPacific   => "Asia-Pacific",
+            Region::UsEast => "US East",
+            Region::UsWest => "US West",
+            Region::EuWest => "EU West",
+            Region::EuNorth => "EU North (Nordics)",
+            Region::AsiaPacific => "Asia-Pacific",
             Region::GlobalAverage => "Global Average",
         }
     }
@@ -103,10 +103,18 @@ impl Region {
     /// All regions sorted by ascending carbon intensity.
     pub fn all_by_intensity() -> Vec<Region> {
         let mut regions = vec![
-            Region::EuNorth, Region::UsWest, Region::EuWest,
-            Region::UsEast, Region::GlobalAverage, Region::AsiaPacific,
+            Region::EuNorth,
+            Region::UsWest,
+            Region::EuWest,
+            Region::UsEast,
+            Region::GlobalAverage,
+            Region::AsiaPacific,
         ];
-        regions.sort_by(|a, b| a.carbon_intensity_g_per_kwh().partial_cmp(&b.carbon_intensity_g_per_kwh()).unwrap_or(std::cmp::Ordering::Equal));
+        regions.sort_by(|a, b| {
+            a.carbon_intensity_g_per_kwh()
+                .partial_cmp(&b.carbon_intensity_g_per_kwh())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         regions
     }
 }
@@ -135,22 +143,22 @@ impl Default for CarbonConfig {
         Self {
             model_energy: vec![
                 // Small (must come before medium/large entries that are substrings).
-                ("gpt-4o-mini".to_string(),  0.4),
+                ("gpt-4o-mini".to_string(), 0.4),
                 ("claude-3-haiku".to_string(), 0.4),
                 ("claude-haiku".to_string(), 0.4),
-                ("gpt-3.5".to_string(),      0.2),
+                ("gpt-3.5".to_string(), 0.2),
                 ("gemini-flash".to_string(), 0.3),
-                ("mistral-7b".to_string(),   0.25),
+                ("mistral-7b".to_string(), 0.25),
                 // Medium.
-                ("gpt-4o".to_string(),       1.2),
-                ("claude-sonnet".to_string(),1.2),
-                ("gpt-4-turbo".to_string(),  1.5),
+                ("gpt-4o".to_string(), 1.2),
+                ("claude-sonnet".to_string(), 1.2),
+                ("gpt-4-turbo".to_string(), 1.5),
                 // Large / frontier.
-                ("gpt-4".to_string(),        3.0),
-                ("claude-3-opus".to_string(),3.0),
-                ("claude-opus".to_string(),  3.0),
-                ("o1".to_string(),           3.5),
-                ("o3".to_string(),           3.5),
+                ("gpt-4".to_string(), 3.0),
+                ("claude-3-opus".to_string(), 3.0),
+                ("claude-opus".to_string(), 3.0),
+                ("o1".to_string(), 3.5),
+                ("o3".to_string(), 3.5),
             ],
             default_energy_wh_per_ktok: 1.0,
             pue: 1.2,
@@ -239,7 +247,11 @@ pub struct CarbonEstimator {
 impl CarbonEstimator {
     /// Create a new estimator.
     pub fn new(cfg: CarbonConfig) -> Self {
-        Self { cfg, accum: HashMap::new(), default_region: Region::UsEast }
+        Self {
+            cfg,
+            accum: HashMap::new(),
+            default_region: Region::UsEast,
+        }
     }
 
     /// Look up the energy coefficient for a model (Wh per 1000 tokens).
@@ -314,7 +326,9 @@ impl CarbonEstimator {
         avg_output_tokens: u64,
         region: Region,
     ) -> f64 {
-        let per_request = self.estimate(model, avg_input_tokens, avg_output_tokens, region).co2e_grams;
+        let per_request = self
+            .estimate(model, avg_input_tokens, avg_output_tokens, region)
+            .co2e_grams;
         per_request * requests_per_day as f64 * 30.0
     }
 
@@ -332,17 +346,21 @@ impl CarbonEstimator {
     ) -> Vec<AlternativeSuggestion> {
         let current_coeff = self.energy_coeff(current_model);
         let current_intensity = region.carbon_intensity_g_per_kwh();
-        let current_co2e = (total_tokens as f64 / 1000.0) * current_coeff * self.cfg.pue
-            * current_intensity / 1000.0;
+        let current_co2e =
+            (total_tokens as f64 / 1000.0) * current_coeff * self.cfg.pue * current_intensity
+                / 1000.0;
 
-        let mut suggestions: Vec<AlternativeSuggestion> = self.cfg.model_energy.iter()
+        let mut suggestions: Vec<AlternativeSuggestion> = self
+            .cfg
+            .model_energy
+            .iter()
             .filter(|(name, coeff)| *coeff < current_coeff && name != current_model)
             .map(|(name, coeff)| {
-                let alt_co2e = (total_tokens as f64 / 1000.0) * coeff * self.cfg.pue
-                    * current_intensity / 1000.0;
-                let cost_saving = cost_per_ktok_usd.map(|cpm| {
-                    (current_coeff - coeff) / 1000.0 * total_tokens as f64 * cpm
-                });
+                let alt_co2e =
+                    (total_tokens as f64 / 1000.0) * coeff * self.cfg.pue * current_intensity
+                        / 1000.0;
+                let cost_saving = cost_per_ktok_usd
+                    .map(|cpm| (current_coeff - coeff) / 1000.0 * total_tokens as f64 * cpm);
                 AlternativeSuggestion {
                     model: name.clone(),
                     energy_wh_per_ktok: *coeff,
@@ -352,24 +370,36 @@ impl CarbonEstimator {
             })
             .collect();
 
-        suggestions.sort_by(|a, b| a.energy_wh_per_ktok.partial_cmp(&b.energy_wh_per_ktok).unwrap_or(std::cmp::Ordering::Equal));
+        suggestions.sort_by(|a, b| {
+            a.energy_wh_per_ktok
+                .partial_cmp(&b.energy_wh_per_ktok)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         suggestions
     }
 
     /// Generate a carbon footprint report across all observed models.
     pub fn report(&self, current_region: Region) -> CarbonReport {
-        let mut models: Vec<ModelCarbonSummary> = self.accum.iter().map(|(model, acc)| {
-            ModelCarbonSummary {
+        let mut models: Vec<ModelCarbonSummary> = self
+            .accum
+            .iter()
+            .map(|(model, acc)| ModelCarbonSummary {
                 model: model.clone(),
                 total_co2e_grams: acc.total_co2e_grams,
                 total_tokens: acc.total_tokens,
                 request_count: acc.request_count,
                 avg_co2e_per_request: if acc.request_count > 0 {
                     acc.total_co2e_grams / acc.request_count as f64
-                } else { 0.0 },
-            }
-        }).collect();
-        models.sort_by(|a, b| b.total_co2e_grams.partial_cmp(&a.total_co2e_grams).unwrap_or(std::cmp::Ordering::Equal));
+                } else {
+                    0.0
+                },
+            })
+            .collect();
+        models.sort_by(|a, b| {
+            b.total_co2e_grams
+                .partial_cmp(&a.total_co2e_grams)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         let total_co2e_grams: f64 = models.iter().map(|m| m.total_co2e_grams).sum();
 
@@ -458,8 +488,11 @@ mod tests {
         let alternatives = est().suggest_alternatives("gpt-4", 1000, Region::UsEast, None);
         // All alternatives should have lower energy coefficient than gpt-4 (3.0 Wh/kTok).
         for alt in &alternatives {
-            assert!(alt.energy_wh_per_ktok < 3.0,
-                "alternative {} has higher energy than gpt-4", alt.model);
+            assert!(
+                alt.energy_wh_per_ktok < 3.0,
+                "alternative {} has higher energy than gpt-4",
+                alt.model
+            );
         }
     }
 
@@ -500,8 +533,10 @@ mod tests {
     fn region_by_intensity_sorted() {
         let regions = Region::all_by_intensity();
         for i in 1..regions.len() {
-            assert!(regions[i - 1].carbon_intensity_g_per_kwh()
-                <= regions[i].carbon_intensity_g_per_kwh());
+            assert!(
+                regions[i - 1].carbon_intensity_g_per_kwh()
+                    <= regions[i].carbon_intensity_g_per_kwh()
+            );
         }
     }
 

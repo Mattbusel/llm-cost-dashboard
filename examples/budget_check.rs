@@ -45,7 +45,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     match f.forecast(Some(budget)) {
         Some(fc) => {
-            println!("Forecast next 30 days: ${:.2} (budget ${budget:.2})", fc.next_month_usd);
+            println!(
+                "Forecast next 30 days: ${:.2} (budget ${budget:.2})",
+                fc.next_month_usd
+            );
             if fc.next_month_usd > budget {
                 println!("OVER BUDGET");
                 std::process::exit(1);

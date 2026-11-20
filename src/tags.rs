@@ -181,10 +181,7 @@ impl TagIndex {
 
     /// Number of distinct values seen for `tag_key`.
     pub fn distinct_values(&self, tag_key: &str) -> Vec<String> {
-        let mut vals: Vec<String> = self
-            .spend_by_tag_value(tag_key)
-            .into_keys()
-            .collect();
+        let mut vals: Vec<String> = self.spend_by_tag_value(tag_key).into_keys().collect();
         vals.sort();
         vals
     }
@@ -243,7 +240,10 @@ mod tests {
         let mut idx = TagIndex::new();
         idx.insert(rec("gpt-4o-mini", 1_000_000, 0), parse_tags(&["env=prod"]));
         idx.insert(rec("gpt-4o-mini", 1_000_000, 0), parse_tags(&["env=prod"]));
-        idx.insert(rec("gpt-4o-mini", 1_000_000, 0), parse_tags(&["env=staging"]));
+        idx.insert(
+            rec("gpt-4o-mini", 1_000_000, 0),
+            parse_tags(&["env=staging"]),
+        );
         let agg = idx.spend_by_tag_value("env");
         assert!(agg["prod"] > agg["staging"]);
     }
@@ -252,7 +252,10 @@ mod tests {
     fn test_top_spend_by_tag_sorted() {
         let mut idx = TagIndex::new();
         idx.insert(rec("gpt-4o-mini", 100, 0), parse_tags(&["feature=search"]));
-        idx.insert(rec("gpt-4o-mini", 1_000_000, 0), parse_tags(&["feature=chat"]));
+        idx.insert(
+            rec("gpt-4o-mini", 1_000_000, 0),
+            parse_tags(&["feature=chat"]),
+        );
         let top = idx.top_spend_by_tag("feature", 5);
         assert_eq!(top[0].0, "chat");
     }

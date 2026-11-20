@@ -183,10 +183,7 @@ impl CostAllocator {
         let total_tokens: u64 = results.iter().map(|r| r.tokens_used).sum();
         out.push_str(&format!(
             "{:<24} {:>12} {:>9.2}% {:>13.4}\n",
-            "TOTAL",
-            total_tokens,
-            100.0_f64,
-            total_cost,
+            "TOTAL", total_tokens, 100.0_f64, total_cost,
         ));
         out.push_str(&separator);
 
@@ -195,11 +192,7 @@ impl CostAllocator {
 
     /// Returns `true` when the allocations sum to the pool total within a
     /// floating-point epsilon of `0.01` USD.
-    pub fn validate_allocation(
-        &self,
-        results: &[AllocationResult],
-        pool: &CostPool,
-    ) -> bool {
+    pub fn validate_allocation(&self, results: &[AllocationResult], pool: &CostPool) -> bool {
         if results.is_empty() {
             return pool.total_cost_usd.abs() < 0.01;
         }
@@ -370,7 +363,11 @@ mod tests {
     fn weighted_all_zero_falls_back_to_equal() {
         let p = pool(100.0);
         let c = consumers_tokens(&[("a", 50), ("b", 50)]);
-        let r = allocator().allocate(&p, &c, &AllocationMethod::WeightedByPriority(HashMap::new()));
+        let r = allocator().allocate(
+            &p,
+            &c,
+            &AllocationMethod::WeightedByPriority(HashMap::new()),
+        );
         assert!((r[0].allocated_cost_usd - 50.0).abs() < 0.001);
         assert!((r[1].allocated_cost_usd - 50.0).abs() < 0.001);
     }
@@ -381,8 +378,18 @@ mod tests {
     fn activity_based_uses_requests() {
         let p = pool(100.0);
         let consumers = vec![
-            ConsumerUsage { consumer_id: "a".to_string(), tokens_used: 9999, requests: 10, priority_weight: 1.0 },
-            ConsumerUsage { consumer_id: "b".to_string(), tokens_used: 1,    requests: 40, priority_weight: 1.0 },
+            ConsumerUsage {
+                consumer_id: "a".to_string(),
+                tokens_used: 9999,
+                requests: 10,
+                priority_weight: 1.0,
+            },
+            ConsumerUsage {
+                consumer_id: "b".to_string(),
+                tokens_used: 1,
+                requests: 40,
+                priority_weight: 1.0,
+            },
         ];
         let r = allocator().allocate(&p, &consumers, &AllocationMethod::ActivityBased);
         assert!((r[0].allocated_cost_usd - 20.0).abs() < 0.001);
@@ -413,7 +420,7 @@ mod tests {
         let p = pool(100.0);
         let bad = vec![AllocationResult {
             consumer_id: "x".to_string(),
-            allocated_cost_usd: 50.0,  // Only half the pool
+            allocated_cost_usd: 50.0, // Only half the pool
             fraction: 0.5,
             tokens_used: 100,
         }];

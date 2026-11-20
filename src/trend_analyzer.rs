@@ -203,7 +203,8 @@ impl TrendAnalyzer {
         }
 
         let mean = values.iter().sum::<f64>() / values.len() as f64;
-        let variance: f64 = values.iter().map(|&v| (v - mean).powi(2)).sum::<f64>() / values.len() as f64;
+        let variance: f64 =
+            values.iter().map(|&v| (v - mean).powi(2)).sum::<f64>() / values.len() as f64;
         if variance < f64::EPSILON {
             return SeasonalityPeriod::None;
         }
@@ -272,7 +273,9 @@ impl TrendAnalyzer {
             .map(|(&s, &c)| if c > 0 { s / c as f64 } else { 0.0 })
             .collect();
 
-        let seasonal: Vec<f64> = (0..values.len()).map(|i| seasonal_means[i % period]).collect();
+        let seasonal: Vec<f64> = (0..values.len())
+            .map(|i| seasonal_means[i % period])
+            .collect();
         let residual: Vec<f64> = values
             .iter()
             .zip(trend.iter())
@@ -280,7 +283,11 @@ impl TrendAnalyzer {
             .map(|((&v, &t), &s)| v - t - s)
             .collect();
 
-        TrendComponents { trend, seasonal, residual }
+        TrendComponents {
+            trend,
+            seasonal,
+            residual,
+        }
     }
 
     /// Forecast `horizon` future values using Holt's double exponential smoothing.

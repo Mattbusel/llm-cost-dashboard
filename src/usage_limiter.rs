@@ -211,7 +211,12 @@ impl Default for UsageLimiter {
 mod tests {
     use super::*;
 
-    fn simple_limits(soft_tokens: u64, hard_tokens: u64, soft_cost: f64, hard_cost: f64) -> UsageLimits {
+    fn simple_limits(
+        soft_tokens: u64,
+        hard_tokens: u64,
+        soft_cost: f64,
+        hard_cost: f64,
+    ) -> UsageLimits {
         UsageLimits {
             soft_token_limit: soft_tokens,
             hard_token_limit: hard_tokens,
@@ -329,7 +334,7 @@ mod tests {
         limiter.set_limits(u1.clone(), simple_limits(100, 500, 1.0, 5.0));
         limiter.set_limits(u2.clone(), simple_limits(100, 500, 1.0, 5.0));
         limiter.record_usage(&u1, 150, 0.0); // over soft
-        limiter.record_usage(&u2, 50, 0.0);  // under soft
+        limiter.record_usage(&u2, 50, 0.0); // under soft
         let report = limiter.overage_report();
         assert_eq!(report.len(), 1);
         assert_eq!(report[0].0, u1);

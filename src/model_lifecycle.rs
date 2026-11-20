@@ -326,11 +326,7 @@ mod tests {
             release_date: 1_695_000_000,
             status: ModelStatus::Active,
             successor_id: None,
-            capabilities: vec![
-                "chat".to_string(),
-                "code".to_string(),
-                "vision".to_string(),
-            ],
+            capabilities: vec!["chat".to_string(), "code".to_string(), "vision".to_string()],
             context_window: 200_000,
         });
 
@@ -340,7 +336,10 @@ mod tests {
     #[test]
     fn test_register_and_status() {
         let mgr = make_manager();
-        assert!(matches!(mgr.current_status("gpt-4"), Some(ModelStatus::Active)));
+        assert!(matches!(
+            mgr.current_status("gpt-4"),
+            Some(ModelStatus::Active)
+        ));
         assert!(matches!(
             mgr.current_status("gpt-3"),
             Some(ModelStatus::Deprecated { .. })
@@ -407,7 +406,9 @@ mod tests {
             capabilities: vec!["chat".to_string(), "code".to_string()],
             context_window: 4096,
         });
-        let plan = mgr.create_migration_plan("claude-v1", "small-model").unwrap();
+        let plan = mgr
+            .create_migration_plan("claude-v1", "small-model")
+            .unwrap();
         assert!(plan
             .breaking_changes
             .iter()

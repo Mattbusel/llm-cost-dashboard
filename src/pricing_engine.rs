@@ -258,7 +258,12 @@ mod tests {
         // gpt-4: 1000 input @ $30/1k + 1000 output @ $60/1k = $90 list, 15% off = $76.50
         let cost = engine.compute_cost("gpt-4", 1_000, 1_000).unwrap();
         let expected = 90.0 * 0.85;
-        assert!((cost - expected).abs() < 1e-9, "cost={} expected={}", cost, expected);
+        assert!(
+            (cost - expected).abs() < 1e-9,
+            "cost={} expected={}",
+            cost,
+            expected
+        );
     }
 
     #[test]

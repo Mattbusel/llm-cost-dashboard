@@ -220,7 +220,12 @@ fn main() {
     let cli = Cli::parse();
 
     if let Some(shell) = cli.completions {
-        clap_complete::generate(shell, &mut Cli::command(), "llm-dash", &mut std::io::stdout());
+        clap_complete::generate(
+            shell,
+            &mut Cli::command(),
+            "llm-dash",
+            &mut std::io::stdout(),
+        );
         return;
     }
 
@@ -275,9 +280,7 @@ fn main() {
     }
 
     // Register webhook configurations.
-    let webhook_threshold = cli
-        .webhook_threshold
-        .unwrap_or(cli.budget * 0.80);
+    let webhook_threshold = cli.webhook_threshold.unwrap_or(cli.budget * 0.80);
     let webhook_format = if cli.webhook_format.eq_ignore_ascii_case("slack") {
         WebhookFormat::Slack
     } else {
@@ -345,10 +348,15 @@ fn main() {
     }
 
     if let Some(dir) = &cli.claude_code {
-        let dir = match dir.clone().or_else(llm_cost_dashboard::import::claude_code_projects_dir) {
+        let dir = match dir
+            .clone()
+            .or_else(llm_cost_dashboard::import::claude_code_projects_dir)
+        {
             Some(d) => d,
             None => {
-                eprintln!("No home directory found; pass the transcript directory: --claude-code DIR");
+                eprintln!(
+                    "No home directory found; pass the transcript directory: --claude-code DIR"
+                );
                 std::process::exit(1);
             }
         };
@@ -367,7 +375,10 @@ fn main() {
                 }
             }
             Err(e) => {
-                eprintln!("Error reading Claude Code transcripts in {}: {e}", dir.display());
+                eprintln!(
+                    "Error reading Claude Code transcripts in {}: {e}",
+                    dir.display()
+                );
                 std::process::exit(1);
             }
         }
@@ -404,7 +415,11 @@ fn main() {
         info!(path = %path.display(), "exporting CSV and exiting");
         match export_csv(&app.ledger, path) {
             Ok(()) => {
-                println!("Exported {} records to {}", app.ledger.len(), path.display());
+                println!(
+                    "Exported {} records to {}",
+                    app.ledger.len(),
+                    path.display()
+                );
                 return;
             }
             Err(e) => {
@@ -420,7 +435,11 @@ fn main() {
         info!(path = %path.display(), "exporting JSON and exiting");
         match export_json(&app.ledger, path) {
             Ok(()) => {
-                println!("Exported {} records to {}", app.ledger.len(), path.display());
+                println!(
+                    "Exported {} records to {}",
+                    app.ledger.len(),
+                    path.display()
+                );
                 return;
             }
             Err(e) => {
@@ -448,22 +467,27 @@ fn main() {
         };
 
         // Convert ledger records into TaggedRequest slice.
-        let tagged: Vec<TaggedRequest> = app.ledger.records().iter().map(|r| {
-            let mut tags = Vec::new();
-            if let Some(ref sid) = r.session_id {
-                tags.push(CostTag::new("session", sid.clone()));
-            }
-            tags.push(CostTag::new("provider", r.provider.clone()));
-            TaggedRequest {
-                request_id: 0,
-                model_id: r.model.clone(),
-                cost_usd: r.total_cost_usd,
-                tokens_in: r.input_tokens as u32,
-                tokens_out: r.output_tokens as u32,
-                tags,
-                timestamp: r.timestamp,
-            }
-        }).collect();
+        let tagged: Vec<TaggedRequest> = app
+            .ledger
+            .records()
+            .iter()
+            .map(|r| {
+                let mut tags = Vec::new();
+                if let Some(ref sid) = r.session_id {
+                    tags.push(CostTag::new("session", sid.clone()));
+                }
+                tags.push(CostTag::new("provider", r.provider.clone()));
+                TaggedRequest {
+                    request_id: 0,
+                    model_id: r.model.clone(),
+                    cost_usd: r.total_cost_usd,
+                    tokens_in: r.input_tokens as u32,
+                    tokens_out: r.output_tokens as u32,
+                    tags,
+                    timestamp: r.timestamp,
+                }
+            })
+            .collect();
 
         let result: Result<(), ExportError> = if let Some(ref out_path) = cli.out {
             let mut file = match std::fs::File::create(out_path) {
@@ -483,7 +507,11 @@ fn main() {
         match result {
             Ok(()) => {
                 if let Some(ref out_path) = cli.out {
-                    println!("Exported {} records to {}", tagged.len(), out_path.display());
+                    println!(
+                        "Exported {} records to {}",
+                        tagged.len(),
+                        out_path.display()
+                    );
                 }
                 return;
             }
@@ -498,11 +526,13 @@ fn main() {
     if cli.compare {
         use llm_cost_dashboard::comparison::{ProviderComparison, WorkloadProfile};
 
-        let profile = WorkloadProfile::from_ledger(&app.ledger)
-            .unwrap_or_else(|| {
-                info!(rph = cli.workload_rph, "deriving workload profile from --workload-rph");
-                WorkloadProfile::from_rph(cli.workload_rph)
-            });
+        let profile = WorkloadProfile::from_ledger(&app.ledger).unwrap_or_else(|| {
+            info!(
+                rph = cli.workload_rph,
+                "deriving workload profile from --workload-rph"
+            );
+            WorkloadProfile::from_rph(cli.workload_rph)
+        });
 
         info!(
             avg_input = profile.avg_input_tokens,
@@ -571,26 +601,29 @@ fn main() {
 
         match forecaster.forecast(Some(cli.budget)) {
             Some(hw) => {
-                println!("\nHolt-Winters Cost Forecast (based on {} records)\n", records.len());
+                println!(
+                    "\nHolt-Winters Cost Forecast (based on {} records)\n",
+                    records.len()
+                );
                 println!("  Next hour:  ${:.6}", hw.next_hour_usd);
                 println!("  Next day:   ${:.4}", hw.next_day_usd);
                 println!("  Next week:  ${:.2}", hw.next_week_usd);
                 println!("  Next month: ${:.2}", hw.next_month_usd);
                 println!(
                     "\n  80% CI (next hour): [${:.6}, ${:.6}]",
-                    hw.confidence_interval.0,
-                    hw.confidence_interval.1
+                    hw.confidence_interval.0, hw.confidence_interval.1
                 );
                 if hw.budget_warning {
                     eprintln!(
                         "\n  WARNING: forecasted monthly spend (${:.2}) exceeds 80% of \
                          budget (${:.2})!",
-                        hw.next_month_usd,
-                        cli.budget
+                        hw.next_month_usd, cli.budget
                     );
                 } else {
-                    println!("  Budget status: OK (monthly forecast ${:.2} < 80% of ${:.2} budget)",
-                        hw.next_month_usd, cli.budget);
+                    println!(
+                        "  Budget status: OK (monthly forecast ${:.2} < 80% of ${:.2} budget)",
+                        hw.next_month_usd, cli.budget
+                    );
                 }
             }
             None => {
@@ -631,14 +664,19 @@ fn main() {
             .collect();
         let report = detector.analyze(&observations);
 
-        println!("\nCost Anomaly Report (based on {} records)\n", records.len());
+        println!(
+            "\nCost Anomaly Report (based on {} records)\n",
+            records.len()
+        );
         println!("  Anomaly rate: {:.1}%", report.anomaly_rate * 100.0);
         println!("  Max Z-score:  {:.2}", report.max_z_score);
         println!("  Anomalies detected: {}", report.anomalies.len());
 
         if !report.anomalies.is_empty() {
-            println!("\n  {:<30}  {:>10}  {:>10}  {:>10}  {:>10}",
-                "Timestamp", "Cost USD", "Mean USD", "Stddev", "Z-score");
+            println!(
+                "\n  {:<30}  {:>10}  {:>10}  {:>10}  {:>10}",
+                "Timestamp", "Cost USD", "Mean USD", "Stddev", "Z-score"
+            );
             println!("  {}", "-".repeat(80));
             for (ts, r) in &report.anomalies {
                 println!(
@@ -668,7 +706,8 @@ fn main() {
 
         let build_snapshot = |label: &str| -> PeriodSnapshot {
             let mut total = 0.0_f64;
-            let mut by_model: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+            let mut by_model: std::collections::HashMap<String, f64> =
+                std::collections::HashMap::new();
             let mut request_count = 0u64;
             for r in records {
                 let date_str = r.timestamp.format("%Y-%m-%d").to_string();
@@ -701,7 +740,11 @@ fn main() {
                     "Note: no records fall in period {:?}. Dates present in the data: {}. \
                      Log lines without a \"timestamp\" field are dated when they are read.",
                     snap.period,
-                    if dates.is_empty() { "none".to_string() } else { dates.join(", ") }
+                    if dates.is_empty() {
+                        "none".to_string()
+                    } else {
+                        dates.join(", ")
+                    }
                 );
             }
         }
@@ -818,7 +861,8 @@ fn main() {
                 ledger_for_api,
                 std::net::SocketAddr::new(cli.bind, port),
             )
-            .await {
+            .await
+            {
                 error!(error = %e, "HTTP API server error");
             }
         });
@@ -846,12 +890,13 @@ fn main() {
 }
 
 /// Start following the log file (if any) from where the initial load stopped.
-fn tail_feed(
-    log_file: &Option<PathBuf>,
-    offset: u64,
-) -> Option<std::sync::mpsc::Receiver<String>> {
+fn tail_feed(log_file: &Option<PathBuf>, offset: u64) -> Option<std::sync::mpsc::Receiver<String>> {
     log_file.as_ref().map(|path| {
         info!(path = %path.display(), offset, "tailing log file for new lines");
-        llm_cost_dashboard::tail::follow(path.clone(), offset, std::time::Duration::from_millis(500))
+        llm_cost_dashboard::tail::follow(
+            path.clone(),
+            offset,
+            std::time::Duration::from_millis(500),
+        )
     })
 }

@@ -198,7 +198,11 @@ impl ExperimentTracker {
             .filter_map(|r| r.metrics.get(metric).map(|&v| (v, r)))
             .reduce(|(best_v, best_r), (v, r)| {
                 let is_better = if maximize { v > best_v } else { v < best_v };
-                if is_better { (v, r) } else { (best_v, best_r) }
+                if is_better {
+                    (v, r)
+                } else {
+                    (best_v, best_r)
+                }
             })
             .map(|(_, r)| r)
     }
@@ -326,11 +330,17 @@ mod tests {
     use super::*;
 
     fn hp_float(name: &str, v: f64) -> HyperParam {
-        HyperParam { name: name.to_string(), value: HpValue::Float(v) }
+        HyperParam {
+            name: name.to_string(),
+            value: HpValue::Float(v),
+        }
     }
 
     fn hp_str(name: &str, v: &str) -> HyperParam {
-        HyperParam { name: name.to_string(), value: HpValue::Str(v.to_string()) }
+        HyperParam {
+            name: name.to_string(),
+            value: HpValue::Str(v.to_string()),
+        }
     }
 
     #[test]

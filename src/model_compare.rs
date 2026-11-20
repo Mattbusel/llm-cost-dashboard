@@ -180,16 +180,32 @@ impl ModelComparison {
         let mut ranked = self.metrics.clone();
         match metric {
             RankMetric::Cost => {
-                ranked.sort_by(|a, b| a.total_cost_usd.partial_cmp(&b.total_cost_usd).unwrap_or(std::cmp::Ordering::Equal));
+                ranked.sort_by(|a, b| {
+                    a.total_cost_usd
+                        .partial_cmp(&b.total_cost_usd)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
             }
             RankMetric::TokenEfficiency => {
-                ranked.sort_by(|a, b| a.avg_cost_per_1k_tokens.partial_cmp(&b.avg_cost_per_1k_tokens).unwrap_or(std::cmp::Ordering::Equal));
+                ranked.sort_by(|a, b| {
+                    a.avg_cost_per_1k_tokens
+                        .partial_cmp(&b.avg_cost_per_1k_tokens)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
             }
             RankMetric::Speed => {
-                ranked.sort_by(|a, b| a.p50_latency_ms.partial_cmp(&b.p50_latency_ms).unwrap_or(std::cmp::Ordering::Equal));
+                ranked.sort_by(|a, b| {
+                    a.p50_latency_ms
+                        .partial_cmp(&b.p50_latency_ms)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
             }
             RankMetric::Reliability => {
-                ranked.sort_by(|a, b| a.error_rate.partial_cmp(&b.error_rate).unwrap_or(std::cmp::Ordering::Equal));
+                ranked.sort_by(|a, b| {
+                    a.error_rate
+                        .partial_cmp(&b.error_rate)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
             }
         }
         ranked
@@ -236,10 +252,26 @@ impl ModelComparison {
         let mut rows = vec![header, sep];
 
         for m in &self.metrics {
-            let cost_mark = if (m.total_cost_usd - best_cost).abs() < 1e-12 { "*" } else { " " };
-            let eff_mark = if (m.avg_cost_per_1k_tokens - best_eff).abs() < 1e-12 { "*" } else { " " };
-            let p50_mark = if (m.p50_latency_ms - best_p50).abs() < 1e-9 { "*" } else { " " };
-            let err_mark = if (m.error_rate - best_err).abs() < 1e-12 { "*" } else { " " };
+            let cost_mark = if (m.total_cost_usd - best_cost).abs() < 1e-12 {
+                "*"
+            } else {
+                " "
+            };
+            let eff_mark = if (m.avg_cost_per_1k_tokens - best_eff).abs() < 1e-12 {
+                "*"
+            } else {
+                " "
+            };
+            let p50_mark = if (m.p50_latency_ms - best_p50).abs() < 1e-9 {
+                "*"
+            } else {
+                " "
+            };
+            let err_mark = if (m.error_rate - best_err).abs() < 1e-12 {
+                "*"
+            } else {
+                " "
+            };
 
             rows.push(format!(
                 "{:<30} {:>8} {:>11.4}{} {:>9.4}{} {:>12} {:>7.1}{} {:>8.1} {:>7.2}{}",
@@ -437,7 +469,10 @@ mod tests {
 
     #[test]
     fn metrics_sorted_alphabetically() {
-        let reqs = vec![make_req("z-model", 1.0, 100, 50), make_req("a-model", 0.5, 100, 50)];
+        let reqs = vec![
+            make_req("z-model", 1.0, 100, 50),
+            make_req("a-model", 0.5, 100, 50),
+        ];
         let cmp = ModelComparison::compute(&reqs);
         assert_eq!(cmp.metrics()[0].model_id, "a-model");
         assert_eq!(cmp.metrics()[1].model_id, "z-model");
@@ -445,7 +480,10 @@ mod tests {
 
     #[test]
     fn rank_by_cost_cheapest_first() {
-        let reqs = vec![make_req("expensive", 10.0, 100, 50), make_req("cheap", 1.0, 100, 50)];
+        let reqs = vec![
+            make_req("expensive", 10.0, 100, 50),
+            make_req("cheap", 1.0, 100, 50),
+        ];
         let cmp = ModelComparison::compute(&reqs);
         let ranked = cmp.rank_by(RankMetric::Cost);
         assert_eq!(ranked[0].model_id, "cheap");
@@ -465,8 +503,8 @@ mod tests {
     #[test]
     fn rank_by_token_efficiency() {
         let reqs = vec![
-            make_req("pricey", 2.0, 500, 500),  // $2/1k
-            make_req("cheap", 0.5, 500, 500),   // $0.5/1k
+            make_req("pricey", 2.0, 500, 500), // $2/1k
+            make_req("cheap", 0.5, 500, 500),  // $0.5/1k
         ];
         let cmp = ModelComparison::compute(&reqs);
         let ranked = cmp.rank_by(RankMetric::TokenEfficiency);
@@ -484,7 +522,10 @@ mod tests {
 
     #[test]
     fn savings_report_cheaper_model() {
-        let reqs = vec![make_req("baseline", 10.0, 1000, 500), make_req("cheaper", 5.0, 1000, 500)];
+        let reqs = vec![
+            make_req("baseline", 10.0, 1000, 500),
+            make_req("cheaper", 5.0, 1000, 500),
+        ];
         let cmp = ModelComparison::compute(&reqs);
         let report = cmp.savings_report("baseline");
         assert_eq!(report.comparisons.len(), 1);
@@ -496,7 +537,10 @@ mod tests {
 
     #[test]
     fn savings_report_more_expensive_model() {
-        let reqs = vec![make_req("baseline", 5.0, 500, 250), make_req("expensive", 10.0, 500, 250)];
+        let reqs = vec![
+            make_req("baseline", 5.0, 500, 250),
+            make_req("expensive", 10.0, 500, 250),
+        ];
         let cmp = ModelComparison::compute(&reqs);
         let report = cmp.savings_report("baseline");
         let (_, pct, usd) = &report.comparisons[0];

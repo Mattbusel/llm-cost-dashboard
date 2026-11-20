@@ -114,13 +114,21 @@ mod tests {
         writeln!(f, "one").unwrap();
         let (_, mut off) = read_complete_lines(f.path()).unwrap();
         let mut pending = Vec::new();
-        assert!(poll_once(f.path(), &mut off, &mut pending).unwrap().is_empty());
+        assert!(poll_once(f.path(), &mut off, &mut pending)
+            .unwrap()
+            .is_empty());
         write!(f, "two\nthr").unwrap();
         f.flush().unwrap();
-        assert_eq!(poll_once(f.path(), &mut off, &mut pending).unwrap(), vec!["two"]);
+        assert_eq!(
+            poll_once(f.path(), &mut off, &mut pending).unwrap(),
+            vec!["two"]
+        );
         writeln!(f, "ee").unwrap();
         f.flush().unwrap();
-        assert_eq!(poll_once(f.path(), &mut off, &mut pending).unwrap(), vec!["three"]);
+        assert_eq!(
+            poll_once(f.path(), &mut off, &mut pending).unwrap(),
+            vec!["three"]
+        );
     }
 
     #[test]

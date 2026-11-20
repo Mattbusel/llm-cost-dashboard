@@ -394,8 +394,7 @@ impl Exporter {
         tag_keys.sort();
 
         // Header row.
-        let mut header =
-            "request_id,model_id,cost_usd,tokens_in,tokens_out,timestamp".to_string();
+        let mut header = "request_id,model_id,cost_usd,tokens_in,tokens_out,timestamp".to_string();
         for k in &tag_keys {
             header.push(',');
             header.push_str(k);
@@ -472,10 +471,7 @@ impl Exporter {
         Ok(())
     }
 
-    fn export_jsonl(
-        requests: &[TaggedRequest],
-        output: &mut dyn Write,
-    ) -> Result<(), ExportError> {
+    fn export_jsonl(requests: &[TaggedRequest], output: &mut dyn Write) -> Result<(), ExportError> {
         for r in requests {
             let tags: serde_json::Value = r
                 .tags
@@ -516,10 +512,7 @@ impl Exporter {
             output,
             "| request_id | model_id | cost_usd | tokens_in | tokens_out | timestamp |"
         )?;
-        writeln!(
-            output,
-            "|---|---|---|---|---|---|"
-        )?;
+        writeln!(output, "|---|---|---|---|---|---|")?;
         for r in sorted {
             writeln!(
                 output,
@@ -734,8 +727,14 @@ mod tests {
         let mut l = CostLedger::new();
         l.add(CostRecord::new("gpt-4o-mini", "openai", 512, 256, 34))
             .unwrap();
-        l.add(CostRecord::new("claude-sonnet-4-6", "anthropic", 1024, 512, 80))
-            .unwrap();
+        l.add(CostRecord::new(
+            "claude-sonnet-4-6",
+            "anthropic",
+            1024,
+            512,
+            80,
+        ))
+        .unwrap();
         l
     }
 

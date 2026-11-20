@@ -48,7 +48,10 @@ pub struct ClusterConfig {
 
 impl Default for ClusterConfig {
     fn default() -> Self {
-        Self { case_insensitive: true, min_keyword_matches: 0 }
+        Self {
+            case_insensitive: true,
+            min_keyword_matches: 0,
+        }
     }
 }
 
@@ -67,7 +70,10 @@ pub struct ClusterDef {
 
 impl ClusterDef {
     fn match_count(&self, text: &str) -> usize {
-        self.keywords.iter().filter(|kw| text.contains(kw.as_str())).count()
+        self.keywords
+            .iter()
+            .filter(|kw| text.contains(kw.as_str()))
+            .count()
     }
 }
 
@@ -179,63 +185,165 @@ impl CostClusterer {
         let grand_count: u64 = self.accum.values().map(|a| a.count).sum();
         let days = self.observation_secs / 86_400.0;
 
-        let mut summaries: Vec<ClusterSummary> = self.accum.iter().map(|(name, acc)| {
-            let label = self.clusters.iter()
-                .find(|c| &c.name == name)
-                .map(|c| c.label.as_str())
-                .unwrap_or(name)
-                .to_string();
-            ClusterSummary {
-                name: name.clone(),
-                label,
-                total_cost_usd: acc.total_cost,
-                request_count: acc.count,
-                avg_cost_usd: if acc.count > 0 { acc.total_cost / acc.count as f64 } else { 0.0 },
-                cost_fraction: if grand_total > 0.0 { acc.total_cost / grand_total } else { 0.0 },
-                daily_cost_usd: acc.total_cost / days,
-            }
-        }).collect();
+        let mut summaries: Vec<ClusterSummary> = self
+            .accum
+            .iter()
+            .map(|(name, acc)| {
+                let label = self
+                    .clusters
+                    .iter()
+                    .find(|c| &c.name == name)
+                    .map(|c| c.label.as_str())
+                    .unwrap_or(name)
+                    .to_string();
+                ClusterSummary {
+                    name: name.clone(),
+                    label,
+                    total_cost_usd: acc.total_cost,
+                    request_count: acc.count,
+                    avg_cost_usd: if acc.count > 0 {
+                        acc.total_cost / acc.count as f64
+                    } else {
+                        0.0
+                    },
+                    cost_fraction: if grand_total > 0.0 {
+                        acc.total_cost / grand_total
+                    } else {
+                        0.0
+                    },
+                    daily_cost_usd: acc.total_cost / days,
+                }
+            })
+            .collect();
 
         summaries.sort_by(|a, b| {
-            b.total_cost_usd.partial_cmp(&a.total_cost_usd)
+            b.total_cost_usd
+                .partial_cmp(&a.total_cost_usd)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        let top_cluster = summaries.first().map(|c| c.name.clone()).unwrap_or_default();
+        let top_cluster = summaries
+            .first()
+            .map(|c| c.name.clone())
+            .unwrap_or_default();
 
-        ClusterReport { clusters: summaries, total_cost_usd: grand_total,
-            total_requests: grand_count, top_cluster, observation_days: days }
+        ClusterReport {
+            clusters: summaries,
+            total_cost_usd: grand_total,
+            total_requests: grand_count,
+            top_cluster,
+            observation_days: days,
+        }
     }
 
     /// Reset all accumulated data.
-    pub fn reset(&mut self) { self.accum.clear(); }
+    pub fn reset(&mut self) {
+        self.accum.clear();
+    }
 
     fn register_defaults(&mut self) {
         let defs: &[(&str, &str, u32, &[&str])] = &[
-            ("code_generation", "Code Generation", 10, &[
-                "function", "implement", "class", "method", "refactor", "debug",
-                "compile", "syntax", "algorithm", "code", "program", "fn ", "struct", "fix this",
-            ]),
-            ("summarization", "Summarization", 20, &[
-                "summarize", "summary", "tldr", "brief", "overview", "condense",
-                "key points", "in short", "bullet point", "abstract",
-            ]),
-            ("question_answer", "Question & Answer", 30, &[
-                "what is", "explain", "how does", "define", "why does",
-                "tell me", "what are", "how to", "when did",
-            ]),
-            ("translation", "Translation", 40, &[
-                "translate", "french", "spanish", "german", "japanese", "chinese",
-                "language", "portuguese", "italian", "arabic", "russian",
-            ]),
-            ("creative", "Creative Writing", 50, &[
-                "story", "poem", "creative", "write a", "imagine", "fiction",
-                "character", "plot", "narrative", "compose", "song",
-            ]),
-            ("data_analysis", "Data Analysis", 60, &[
-                "analyze", "analysis", "chart", "statistics", "dataset", "trends",
-                "regression", "correlation", "visualize", "aggregate", "sql",
-            ]),
+            (
+                "code_generation",
+                "Code Generation",
+                10,
+                &[
+                    "function",
+                    "implement",
+                    "class",
+                    "method",
+                    "refactor",
+                    "debug",
+                    "compile",
+                    "syntax",
+                    "algorithm",
+                    "code",
+                    "program",
+                    "fn ",
+                    "struct",
+                    "fix this",
+                ],
+            ),
+            (
+                "summarization",
+                "Summarization",
+                20,
+                &[
+                    "summarize",
+                    "summary",
+                    "tldr",
+                    "brief",
+                    "overview",
+                    "condense",
+                    "key points",
+                    "in short",
+                    "bullet point",
+                    "abstract",
+                ],
+            ),
+            (
+                "question_answer",
+                "Question & Answer",
+                30,
+                &[
+                    "what is", "explain", "how does", "define", "why does", "tell me", "what are",
+                    "how to", "when did",
+                ],
+            ),
+            (
+                "translation",
+                "Translation",
+                40,
+                &[
+                    "translate",
+                    "french",
+                    "spanish",
+                    "german",
+                    "japanese",
+                    "chinese",
+                    "language",
+                    "portuguese",
+                    "italian",
+                    "arabic",
+                    "russian",
+                ],
+            ),
+            (
+                "creative",
+                "Creative Writing",
+                50,
+                &[
+                    "story",
+                    "poem",
+                    "creative",
+                    "write a",
+                    "imagine",
+                    "fiction",
+                    "character",
+                    "plot",
+                    "narrative",
+                    "compose",
+                    "song",
+                ],
+            ),
+            (
+                "data_analysis",
+                "Data Analysis",
+                60,
+                &[
+                    "analyze",
+                    "analysis",
+                    "chart",
+                    "statistics",
+                    "dataset",
+                    "trends",
+                    "regression",
+                    "correlation",
+                    "visualize",
+                    "aggregate",
+                    "sql",
+                ],
+            ),
         ];
         for (name, label, priority, kws) in defs {
             self.clusters.push(ClusterDef {
@@ -259,22 +367,34 @@ mod tests {
 
     #[test]
     fn classifies_code_generation() {
-        assert_eq!(clusterer().classify("Please implement a function to sort a list"), "code_generation");
+        assert_eq!(
+            clusterer().classify("Please implement a function to sort a list"),
+            "code_generation"
+        );
     }
 
     #[test]
     fn classifies_summarization() {
-        assert_eq!(clusterer().classify("Summarize the following article in bullet points"), "summarization");
+        assert_eq!(
+            clusterer().classify("Summarize the following article in bullet points"),
+            "summarization"
+        );
     }
 
     #[test]
     fn classifies_translation() {
-        assert_eq!(clusterer().classify("Translate the following text to French"), "translation");
+        assert_eq!(
+            clusterer().classify("Translate the following text to French"),
+            "translation"
+        );
     }
 
     #[test]
     fn classifies_creative() {
-        assert_eq!(clusterer().classify("Write a story about a robot"), "creative");
+        assert_eq!(
+            clusterer().classify("Write a story about a robot"),
+            "creative"
+        );
     }
 
     #[test]
@@ -288,7 +408,11 @@ mod tests {
         c.observe("implement a sorting algorithm", 0.01);
         c.observe("implement a search function", 0.02);
         let report = c.report();
-        let code = report.clusters.iter().find(|cl| cl.name == "code_generation").unwrap();
+        let code = report
+            .clusters
+            .iter()
+            .find(|cl| cl.name == "code_generation")
+            .unwrap();
         assert!((code.total_cost_usd - 0.03).abs() < 1e-9);
         assert_eq!(code.request_count, 2);
     }
@@ -331,10 +455,17 @@ mod tests {
         c.add_cluster(ClusterDef {
             name: "legal".to_string(),
             label: "Legal Review".to_string(),
-            keywords: vec!["contract".to_string(), "clause".to_string(), "liability".to_string()],
+            keywords: vec![
+                "contract".to_string(),
+                "clause".to_string(),
+                "liability".to_string(),
+            ],
             priority: 5,
         });
-        assert_eq!(c.classify("Please review this contract for liability clauses"), "legal");
+        assert_eq!(
+            c.classify("Please review this contract for liability clauses"),
+            "legal"
+        );
     }
 
     #[test]
@@ -351,7 +482,11 @@ mod tests {
         c.set_observation_secs(3600.0); // 1 hour = 1/24 day
         c.observe("implement a function", 1.0);
         let report = c.report();
-        let code = report.clusters.iter().find(|cl| cl.name == "code_generation").unwrap();
+        let code = report
+            .clusters
+            .iter()
+            .find(|cl| cl.name == "code_generation")
+            .unwrap();
         assert!((code.daily_cost_usd - 24.0).abs() < 0.01);
     }
 }

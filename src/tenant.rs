@@ -79,7 +79,11 @@ impl TenantLedger {
         self.events
             .entry(tenant_id.to_string())
             .or_default()
-            .push(CostEvent { cost_usd, model_id: model_id.to_string(), date });
+            .push(CostEvent {
+                cost_usd,
+                model_id: model_id.to_string(),
+                date,
+            });
     }
 
     /// Return the total cost recorded for `tenant_id` (0.0 if unknown).
@@ -197,9 +201,10 @@ impl TenantIsolator {
             .values()
             .map(|tenant| {
                 let total = self.ledger.total(&tenant.id);
-                let quota_pct_used = tenant.quota_usd.map(|q| {
-                    if q <= 0.0 { f64::INFINITY } else { total / q }
-                });
+                let quota_pct_used =
+                    tenant
+                        .quota_usd
+                        .map(|q| if q <= 0.0 { f64::INFINITY } else { total / q });
                 TenantReport {
                     top_models: self.ledger.top_models(&tenant.id, 5),
                     daily_breakdown: self.ledger.daily_breakdown(&tenant.id),
@@ -248,7 +253,8 @@ impl TenantIsolator {
                 r.tenant.name,
                 r.tenant.id,
                 r.total_cost_usd,
-                r.quota_usd.map_or("none".to_string(), |q| format!("${:.2}", q))
+                r.quota_usd
+                    .map_or("none".to_string(), |q| format!("${:.2}", q))
             );
             for (model, cost) in &r.top_models {
                 println!("    {} -> ${:.4}", model, cost);

@@ -234,7 +234,8 @@ impl SavingsCalculator {
         cost_per_token: f64,
         num_requests: u64,
     ) -> SavingsOpportunity {
-        let tokens_saved_per_request = avg_prompt_tokens * (1.0 - compression_ratio.clamp(0.0, 1.0));
+        let tokens_saved_per_request =
+            avg_prompt_tokens * (1.0 - compression_ratio.clamp(0.0, 1.0));
         let savings = tokens_saved_per_request * cost_per_token * num_requests as f64;
 
         SavingsOpportunity {
@@ -254,10 +255,7 @@ impl SavingsCalculator {
     }
 
     /// Estimate savings from eliminating spend during idle hours.
-    pub fn idle_elimination_savings(
-        total_cost: f64,
-        idle_hours_pct: f64,
-    ) -> SavingsOpportunity {
+    pub fn idle_elimination_savings(total_cost: f64, idle_hours_pct: f64) -> SavingsOpportunity {
         let savings = total_cost * idle_hours_pct.clamp(0.0, 1.0) * 0.90; // 90% recoverable
 
         SavingsOpportunity {
@@ -454,8 +452,14 @@ mod tests {
 
     #[test]
     fn test_savings_category_display() {
-        assert_eq!(SavingsCategory::ModelDowngrade.to_string(), "Model Downgrade");
-        assert_eq!(SavingsCategory::IdleElimination.to_string(), "Idle Elimination");
+        assert_eq!(
+            SavingsCategory::ModelDowngrade.to_string(),
+            "Model Downgrade"
+        );
+        assert_eq!(
+            SavingsCategory::IdleElimination.to_string(),
+            "Idle Elimination"
+        );
     }
 
     #[test]

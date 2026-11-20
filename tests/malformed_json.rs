@@ -1,6 +1,5 @@
 //! Integration tests for malformed JSON ingestion in the log parser.
 #![cfg(feature = "tui")]
-
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 //!
 //! Every test here feeds broken or incomplete JSON to [`RequestLog::ingest_line`]

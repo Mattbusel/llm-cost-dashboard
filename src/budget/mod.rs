@@ -13,7 +13,9 @@
 pub mod hierarchy;
 pub mod planner;
 
-pub use hierarchy::{BudgetAlert, OrgSummary, OrgTree, ProjectConfig, ProjectSummary, TeamConfig, TeamSummary};
+pub use hierarchy::{
+    BudgetAlert, OrgSummary, OrgTree, ProjectConfig, ProjectSummary, TeamConfig, TeamSummary,
+};
 
 use crate::error::DashboardError;
 

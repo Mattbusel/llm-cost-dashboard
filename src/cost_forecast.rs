@@ -207,7 +207,11 @@ impl CostForecaster {
             let prev_seasonal = seasonal[s_idx];
 
             // Avoid division by near-zero seasonal index.
-            let s_safe = if prev_seasonal.abs() < 1e-12 { 1.0 } else { prev_seasonal };
+            let s_safe = if prev_seasonal.abs() < 1e-12 {
+                1.0
+            } else {
+                prev_seasonal
+            };
 
             level = alpha * (y / s_safe) + (1.0 - alpha) * (prev_level + prev_trend);
             trend = beta * (level - prev_level) + (1.0 - beta) * prev_trend;
@@ -395,9 +399,20 @@ impl CostForecaster {
 
         // Generate out-of-sample forecasts.
         let forecasted: Vec<f64> = match model {
-            ForecastModel::HoltWinters { alpha, beta, gamma, season_len } => {
-                let full =
-                    Self::holt_winters_forecast(historical, *alpha, *beta, *gamma, *season_len, horizon);
+            ForecastModel::HoltWinters {
+                alpha,
+                beta,
+                gamma,
+                season_len,
+            } => {
+                let full = Self::holt_winters_forecast(
+                    historical,
+                    *alpha,
+                    *beta,
+                    *gamma,
+                    *season_len,
+                    horizon,
+                );
                 full.into_iter().skip(historical.len()).collect()
             }
             ForecastModel::LinearTrend { slope, intercept } => {
@@ -470,10 +485,13 @@ impl CostForecaster {
         let season_len = Self::detect_seasonality(historical).unwrap_or(7).max(2);
         let hw_aic = if historical.len() >= season_len * 2 {
             let (a, b, g) = Self::fit_holt_winters(historical, season_len);
-            let hw_fitted =
-                Self::holt_winters_forecast(historical, a, b, g, season_len, 0);
+            let hw_fitted = Self::holt_winters_forecast(historical, a, b, g, season_len, 0);
             let k = 3 + season_len; // alpha + beta + gamma + seasonal indices
-            aic(&hw_fitted[..historical.len().min(hw_fitted.len())], historical, k)
+            aic(
+                &hw_fitted[..historical.len().min(hw_fitted.len())],
+                historical,
+                k,
+            )
         } else {
             f64::MAX
         };
@@ -542,7 +560,11 @@ fn probit(p: f64) -> f64 {
     let num = c[0] + t * (c[1] + t * c[2]);
     let den = 1.0 + t * (d[0] + t * (d[1] + t * d[2]));
     let z = t - num / den;
-    if p >= 0.5 { z } else { -z }
+    if p >= 0.5 {
+        z
+    } else {
+        -z
+    }
 }
 
 #[cfg(test)]

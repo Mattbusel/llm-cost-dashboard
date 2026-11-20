@@ -303,7 +303,13 @@ mod tests {
         }
     }
 
-    fn team_policy(team: &str, monthly: f64, per_req: f64, auto_below: f64, review_above: f64) -> GovernancePolicy {
+    fn team_policy(
+        team: &str,
+        monthly: f64,
+        per_req: f64,
+        auto_below: f64,
+        review_above: f64,
+    ) -> GovernancePolicy {
         GovernancePolicy {
             policy_id: format!("team-{}", team),
             name: format!("team-policy-{}", team),
@@ -433,7 +439,9 @@ mod tests {
         let now = 1_000u64;
         engine.evaluate_request(&req("r1", PolicyScope::Global, 10.0, now));
         // Force spend past the limit by directly inserting.
-        engine.approved_spend.push(("global".to_string(), 10.0, now));
+        engine
+            .approved_spend
+            .push(("global".to_string(), 10.0, now));
         let violations = engine.policy_violations(now);
         assert!(!violations.is_empty());
     }
@@ -463,7 +471,13 @@ mod tests {
     fn policy_scope_display() {
         assert_eq!(PolicyScope::Global.to_string(), "global");
         assert_eq!(PolicyScope::Team("eng".to_string()).to_string(), "team:eng");
-        assert_eq!(PolicyScope::Project("llm".to_string()).to_string(), "project:llm");
-        assert_eq!(PolicyScope::User("alice".to_string()).to_string(), "user:alice");
+        assert_eq!(
+            PolicyScope::Project("llm".to_string()).to_string(),
+            "project:llm"
+        );
+        assert_eq!(
+            PolicyScope::User("alice".to_string()).to_string(),
+            "user:alice"
+        );
     }
 }

@@ -3,7 +3,6 @@
 //! These tests verify cross-module behaviour: demo mode producing real
 //! CostRecord entries and the pricing table covering all major models.
 #![cfg(feature = "tui")]
-
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::len_zero)]
 
 use llm_cost_dashboard::{

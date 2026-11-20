@@ -101,7 +101,10 @@ impl NotificationTemplate {
     ///
     /// Returns `(rendered_subject, rendered_body)`.
     pub fn render(&self, vars: &HashMap<String, String>) -> (String, String) {
-        (render_template(&self.subject_template, vars), render_template(&self.body_template, vars))
+        (
+            render_template(&self.subject_template, vars),
+            render_template(&self.body_template, vars),
+        )
     }
 }
 
@@ -188,13 +191,21 @@ impl NotificationDispatcher {
         body: &str,
         severity: Severity,
     ) -> Result<(), NotifError> {
-        let channel = self.channels.get(name).cloned().ok_or(NotifError::ChannelNotFound)?;
+        let channel = self
+            .channels
+            .get(name)
+            .cloned()
+            .ok_or(NotifError::ChannelNotFound)?;
 
         let id = format!("notif-{}", self.next_id);
         self.next_id += 1;
 
         self.stats.total_dispatched += 1;
-        *self.stats.by_severity.entry(severity.as_str().to_string()).or_default() += 1;
+        *self
+            .stats
+            .by_severity
+            .entry(severity.as_str().to_string())
+            .or_default() += 1;
 
         let (sent_at, error) = self.dispatch_to_channel(&channel, subject, body, &severity);
 
@@ -237,7 +248,9 @@ impl NotificationDispatcher {
                 match severity {
                     Severity::Critical => tracing::error!(subject, body, "notification dispatched"),
                     Severity::Warning => tracing::warn!(subject, body, "notification dispatched"),
-                    Severity::Recovery => tracing::info!(subject, body, "notification dispatched (recovery)"),
+                    Severity::Recovery => {
+                        tracing::info!(subject, body, "notification dispatched (recovery)")
+                    }
                     Severity::Info => tracing::info!(subject, body, "notification dispatched"),
                 }
                 (Some(0), None)
@@ -291,7 +304,9 @@ impl NotificationDispatcher {
 }
 
 impl Default for NotificationDispatcher {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -307,8 +322,17 @@ mod tests {
         let mut dispatcher = NotificationDispatcher::new();
         dispatcher.add_channel("alerts", NotificationChannel::InMemory);
 
-        dispatcher.dispatch("alerts", "Test Subject", "Test Body", Severity::Info).unwrap();
-        dispatcher.dispatch("alerts", "Warning Subject", "Warning Body", Severity::Warning).unwrap();
+        dispatcher
+            .dispatch("alerts", "Test Subject", "Test Body", Severity::Info)
+            .unwrap();
+        dispatcher
+            .dispatch(
+                "alerts",
+                "Warning Subject",
+                "Warning Body",
+                Severity::Warning,
+            )
+            .unwrap();
 
         let stored = dispatcher.dispatched_notifications();
         assert_eq!(stored.len(), 2);
@@ -357,8 +381,12 @@ mod tests {
 
         dispatcher.dispatch("ch", "s", "b", Severity::Info).unwrap();
         dispatcher.dispatch("ch", "s", "b", Severity::Info).unwrap();
-        dispatcher.dispatch("ch", "s", "b", Severity::Critical).unwrap();
-        dispatcher.dispatch("ch", "s", "b", Severity::Warning).unwrap();
+        dispatcher
+            .dispatch("ch", "s", "b", Severity::Critical)
+            .unwrap();
+        dispatcher
+            .dispatch("ch", "s", "b", Severity::Warning)
+            .unwrap();
 
         let stats = dispatcher.stats();
         assert_eq!(stats.total_dispatched, 4);
@@ -384,7 +412,10 @@ mod tests {
 
         dispatcher.retry_failed();
 
-        assert!(dispatcher.notifications[0].error.is_none(), "error should be cleared after retry");
+        assert!(
+            dispatcher.notifications[0].error.is_none(),
+            "error should be cleared after retry"
+        );
         assert_eq!(dispatcher.stats().failed, 0);
     }
 
@@ -392,7 +423,9 @@ mod tests {
     fn retry_respects_max_retry_count() {
         let mut dispatcher = NotificationDispatcher::new();
         dispatcher.add_channel("ch", NotificationChannel::InMemory);
-        dispatcher.dispatch("ch", "s", "b", Severity::Critical).unwrap();
+        dispatcher
+            .dispatch("ch", "s", "b", Severity::Critical)
+            .unwrap();
 
         // Inject an error and set retry_count to 3 (already at max).
         dispatcher.notifications[0].error = Some("persistent failure".to_string());
@@ -409,13 +442,22 @@ mod tests {
         let mut dispatcher = NotificationDispatcher::new();
         dispatcher.add_channel("mem", NotificationChannel::InMemory);
         dispatcher.add_channel("log", NotificationChannel::Log);
-        dispatcher.add_channel("slack", NotificationChannel::Slack {
-            webhook_url: "https://hooks.slack.com/test".to_string(),
-        });
+        dispatcher.add_channel(
+            "slack",
+            NotificationChannel::Slack {
+                webhook_url: "https://hooks.slack.com/test".to_string(),
+            },
+        );
 
-        dispatcher.dispatch("mem", "Memory alert", "body", Severity::Warning).unwrap();
-        dispatcher.dispatch("log", "Log alert", "body", Severity::Info).unwrap();
-        dispatcher.dispatch("slack", "Slack alert", "body", Severity::Critical).unwrap();
+        dispatcher
+            .dispatch("mem", "Memory alert", "body", Severity::Warning)
+            .unwrap();
+        dispatcher
+            .dispatch("log", "Log alert", "body", Severity::Info)
+            .unwrap();
+        dispatcher
+            .dispatch("slack", "Slack alert", "body", Severity::Critical)
+            .unwrap();
 
         assert_eq!(dispatcher.dispatched_notifications().len(), 3);
         assert_eq!(dispatcher.stats().total_dispatched, 3);

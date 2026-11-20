@@ -113,12 +113,7 @@ pub struct CostProjection {
 }
 
 impl CostProjection {
-    fn compute(
-        model: &str,
-        input_rate: f64,
-        output_rate: f64,
-        profile: &WorkloadProfile,
-    ) -> Self {
+    fn compute(model: &str, input_rate: f64, output_rate: f64, profile: &WorkloadProfile) -> Self {
         let cost_per_request = (profile.avg_input_tokens as f64 * input_rate
             + profile.avg_output_tokens as f64 * output_rate)
             / 1_000_000.0;
@@ -144,24 +139,31 @@ fn infer_provider(model: &str) -> String {
     let m = model.to_lowercase();
     if m.starts_with("claude") {
         "Anthropic".into()
-    } else if m.starts_with("gpt") || m.starts_with("o1") || m.starts_with("o3")
-        || m.starts_with("o4") || m.starts_with("chatgpt")
+    } else if m.starts_with("gpt")
+        || m.starts_with("o1")
+        || m.starts_with("o3")
+        || m.starts_with("o4")
+        || m.starts_with("chatgpt")
     {
         "OpenAI".into()
     } else if m.starts_with("gemini") {
         "Google".into()
     } else if m.starts_with("deepseek") {
         "DeepSeek".into()
-    } else if m.starts_with("mistral") || m.starts_with("codestral")
-        || m.starts_with("pixtral") || m.starts_with("ministral")
+    } else if m.starts_with("mistral")
+        || m.starts_with("codestral")
+        || m.starts_with("pixtral")
+        || m.starts_with("ministral")
     {
         "Mistral".into()
     } else if m.starts_with("meta-llama") || m.starts_with("llama") {
         "Meta (Llama)".into()
     } else if m.starts_with("grok") {
         "xAI".into()
-    } else if m.starts_with("command") || m.starts_with("palmyra")
-        || m.starts_with("jamba") || m.starts_with("sonar")
+    } else if m.starts_with("command")
+        || m.starts_with("palmyra")
+        || m.starts_with("jamba")
+        || m.starts_with("sonar")
     {
         "Various".into()
     } else if m.starts_with("amazon") {
@@ -213,7 +215,9 @@ impl ProviderComparison {
     /// this can never happen in practice).
     pub fn cheapest(&self) -> &CostProjection {
         #[allow(clippy::expect_used)]
-        self.projections.first().expect("pricing table is never empty")
+        self.projections
+            .first()
+            .expect("pricing table is never empty")
     }
 
     /// The most expensive option across all models.
@@ -223,7 +227,9 @@ impl ProviderComparison {
     /// Same caveat as [`cheapest`](Self::cheapest).
     pub fn most_expensive(&self) -> &CostProjection {
         #[allow(clippy::expect_used)]
-        self.projections.last().expect("pricing table is never empty")
+        self.projections
+            .last()
+            .expect("pricing table is never empty")
     }
 
     /// Return the `n` cheapest models.

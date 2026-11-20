@@ -246,7 +246,9 @@ impl AuditLogger {
         let mut last_event_ms: Option<u64> = None;
 
         for e in guard.iter() {
-            *events_by_type.entry(e.kind.as_str().to_string()).or_insert(0) += 1;
+            *events_by_type
+                .entry(e.kind.as_str().to_string())
+                .or_insert(0) += 1;
             first_event_ms = Some(match first_event_ms {
                 None => e.timestamp_ms,
                 Some(prev) => prev.min(e.timestamp_ms),

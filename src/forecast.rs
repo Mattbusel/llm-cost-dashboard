@@ -266,7 +266,11 @@ impl SpendForecaster {
         match (slope_first, slope_second) {
             (Some(s1), Some(s2)) => {
                 // Allow a 10% band around stable.
-                let ratio = if s1.abs() > f64::EPSILON { s2 / s1 } else { 1.0 };
+                let ratio = if s1.abs() > f64::EPSILON {
+                    s2 / s1
+                } else {
+                    1.0
+                };
                 if ratio > 1.10 {
                     Trend::Accelerating
                 } else if ratio < 0.90 {
@@ -549,7 +553,11 @@ impl CostForecaster {
                 phi_k *= PHI;
                 damp += phi_k;
                 let rate = (level + damp * trend).max(0.0);
-                let fraction = if k <= whole { 1.0 } else { steps - whole as f64 };
+                let fraction = if k <= whole {
+                    1.0
+                } else {
+                    steps - whole as f64
+                };
                 total += rate * bucket * fraction;
             }
             total
@@ -752,14 +760,16 @@ impl HoltWintersModel {
         let prev_trend = self.trend;
 
         // Guard against division by zero.
-        let denom = if seasonal_t.abs() < f64::EPSILON { 1.0 } else { seasonal_t };
+        let denom = if seasonal_t.abs() < f64::EPSILON {
+            1.0
+        } else {
+            seasonal_t
+        };
 
-        self.level = self.alpha * (value / denom)
-            + (1.0 - self.alpha) * (prev_level + prev_trend);
-        self.trend = self.beta * (self.level - prev_level)
-            + (1.0 - self.beta) * prev_trend;
-        self.seasonal[s_idx] = self.gamma * (value / self.level.max(f64::EPSILON))
-            + (1.0 - self.gamma) * seasonal_t;
+        self.level = self.alpha * (value / denom) + (1.0 - self.alpha) * (prev_level + prev_trend);
+        self.trend = self.beta * (self.level - prev_level) + (1.0 - self.beta) * prev_trend;
+        self.seasonal[s_idx] =
+            self.gamma * (value / self.level.max(f64::EPSILON)) + (1.0 - self.gamma) * seasonal_t;
     }
 
     /// Forecast `steps` periods ahead (multiplicative seasonality).
@@ -829,9 +839,12 @@ impl EsCostForecaster {
             ForecastMethod::DoubleExponential { alpha, beta } => {
                 Self::fit_double(historical_costs, alpha, beta)
             }
-            ForecastMethod::HoltWinters { alpha, beta, gamma, period } => {
-                Self::fit_hw(historical_costs, alpha, beta, gamma, period)
-            }
+            ForecastMethod::HoltWinters {
+                alpha,
+                beta,
+                gamma,
+                period,
+            } => Self::fit_hw(historical_costs, alpha, beta, gamma, period),
         }
     }
 
@@ -860,7 +873,11 @@ impl EsCostForecaster {
     fn fit_double(data: &[f64], alpha: f64, beta: f64) -> Self {
         let mut model = DoubleEsModel::new(alpha, beta);
         model.level = data[0];
-        model.trend = if data.len() >= 2 { data[1] - data[0] } else { 0.0 };
+        model.trend = if data.len() >= 2 {
+            data[1] - data[0]
+        } else {
+            0.0
+        };
 
         let mut fitted = Vec::with_capacity(data.len());
         let mut residuals = Vec::with_capacity(data.len());
@@ -890,7 +907,11 @@ impl EsCostForecaster {
         let initial_seasonal: Vec<f64> = data[..season_len]
             .iter()
             .map(|&v| {
-                if season_mean.abs() < f64::EPSILON { 1.0 } else { v / season_mean }
+                if season_mean.abs() < f64::EPSILON {
+                    1.0
+                } else {
+                    v / season_mean
+                }
             })
             .collect();
 
@@ -985,7 +1006,12 @@ impl EsCostForecaster {
         }
         let n = self.residuals.len() as f64;
         let mean = self.residuals.iter().sum::<f64>() / n;
-        let variance = self.residuals.iter().map(|r| (r - mean).powi(2)).sum::<f64>() / (n - 1.0);
+        let variance = self
+            .residuals
+            .iter()
+            .map(|r| (r - mean).powi(2))
+            .sum::<f64>()
+            / (n - 1.0);
         variance.sqrt()
     }
 }
@@ -1027,7 +1053,10 @@ mod es_tests {
         let data = linear_series(10, 1.0);
         let fc = EsCostForecaster::fit(
             &data,
-            ForecastMethod::DoubleExponential { alpha: 0.5, beta: 0.3 },
+            ForecastMethod::DoubleExponential {
+                alpha: 0.5,
+                beta: 0.3,
+            },
         );
         let preds = fc.forecast(3);
         assert_eq!(preds.len(), 3);
@@ -1043,7 +1072,10 @@ mod es_tests {
         let data = linear_series(20, 3.0);
         let fc = EsCostForecaster::fit(
             &data,
-            ForecastMethod::DoubleExponential { alpha: 0.9, beta: 0.9 },
+            ForecastMethod::DoubleExponential {
+                alpha: 0.9,
+                beta: 0.9,
+            },
         );
         // MAE should be finite and non-negative.
         let mae = fc.mae();
@@ -1056,7 +1088,12 @@ mod es_tests {
         let data: Vec<f64> = (0..24).map(|i| (i % 7) as f64 + 1.0).collect();
         let fc = EsCostForecaster::fit(
             &data,
-            ForecastMethod::HoltWinters { alpha: 0.3, beta: 0.1, gamma: 0.1, period: 7 },
+            ForecastMethod::HoltWinters {
+                alpha: 0.3,
+                beta: 0.1,
+                gamma: 0.1,
+                period: 7,
+            },
         );
         assert_eq!(fc.forecast(7).len(), 7);
     }
@@ -1066,7 +1103,12 @@ mod es_tests {
         let data: Vec<f64> = (0..24).map(|i| (i % 7) as f64 + 1.0).collect();
         let fc = EsCostForecaster::fit(
             &data,
-            ForecastMethod::HoltWinters { alpha: 0.3, beta: 0.1, gamma: 0.1, period: 7 },
+            ForecastMethod::HoltWinters {
+                alpha: 0.3,
+                beta: 0.1,
+                gamma: 0.1,
+                period: 7,
+            },
         );
         assert!(fc.mae().is_finite());
     }
@@ -1335,8 +1377,16 @@ mod tests {
         let f = make_hw_forecaster_linear(24, 0.50);
         let result = f.forecast(None).unwrap();
         let (lo, hi) = result.confidence_interval;
-        assert!(lo <= result.next_hour_usd, "CI lower ({lo:.4}) should be <= point estimate ({:.4})", result.next_hour_usd);
-        assert!(hi >= result.next_hour_usd, "CI upper ({hi:.4}) should be >= point estimate ({:.4})", result.next_hour_usd);
+        assert!(
+            lo <= result.next_hour_usd,
+            "CI lower ({lo:.4}) should be <= point estimate ({:.4})",
+            result.next_hour_usd
+        );
+        assert!(
+            hi >= result.next_hour_usd,
+            "CI upper ({hi:.4}) should be >= point estimate ({:.4})",
+            result.next_hour_usd
+        );
     }
 
     #[test]
@@ -1353,7 +1403,10 @@ mod tests {
         // Very low spend rate: $0.001/h → ~$0.72/month. Budget = $1000.
         let f = make_hw_forecaster_linear(24, 0.001);
         let result = f.forecast(Some(1_000.0)).unwrap();
-        assert!(!result.budget_warning, "no warning expected for tiny spend vs large budget");
+        assert!(
+            !result.budget_warning,
+            "no warning expected for tiny spend vs large budget"
+        );
     }
 
     #[test]
@@ -1361,8 +1414,16 @@ mod tests {
         // $0.50 every hour for a day: the projection must be about $0.50/h.
         let f = make_hw_forecaster_linear(25, 0.50);
         let r = f.forecast(None).unwrap();
-        assert!((r.next_day_usd - 12.0).abs() < 0.01, "next day {}", r.next_day_usd);
-        assert!((r.next_month_usd - 360.0).abs() < 0.5, "next month {}", r.next_month_usd);
+        assert!(
+            (r.next_day_usd - 12.0).abs() < 0.01,
+            "next day {}",
+            r.next_day_usd
+        );
+        assert!(
+            (r.next_month_usd - 360.0).abs() < 0.5,
+            "next month {}",
+            r.next_month_usd
+        );
     }
 
     /// Sparse, bursty log: a few calls during working hours on four days
@@ -1415,7 +1476,11 @@ mod tests {
         }
         let r = f.forecast(None).unwrap();
         assert!(r.next_month_usd.is_finite());
-        assert!(r.next_month_usd > 30.0 * 0.01 * 64.0, "{}", r.next_month_usd);
+        assert!(
+            r.next_month_usd > 30.0 * 0.01 * 64.0,
+            "{}",
+            r.next_month_usd
+        );
     }
 
     #[test]

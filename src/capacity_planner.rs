@@ -52,13 +52,24 @@ pub struct CapacityMetric {
 
 impl CapacityMetric {
     /// Create a new metric, computing `utilization_pct` automatically.
-    pub fn new(resource: ResourceType, current_usage: f64, capacity: f64, timestamp_unix: u64) -> Self {
+    pub fn new(
+        resource: ResourceType,
+        current_usage: f64,
+        capacity: f64,
+        timestamp_unix: u64,
+    ) -> Self {
         let utilization_pct = if capacity > 0.0 {
             (current_usage / capacity * 100.0).clamp(0.0, 200.0)
         } else {
             0.0
         };
-        Self { resource, current_usage, capacity, utilization_pct, timestamp_unix }
+        Self {
+            resource,
+            current_usage,
+            capacity,
+            utilization_pct,
+            timestamp_unix,
+        }
     }
 
     /// Remaining capacity before the limit is reached.
@@ -110,13 +121,26 @@ impl GrowthModel {
     pub fn project(&self, current: f64, days: u32) -> f64 {
         match self {
             GrowthModel::Linear { daily_rate } => current + *daily_rate * days as f64,
-            GrowthModel::Exponential { daily_rate } => current * (1.0 + daily_rate).powi(days as i32),
-            GrowthModel::Seasonal { base, amplitude, period_days } => {
+            GrowthModel::Exponential { daily_rate } => {
+                current * (1.0 + daily_rate).powi(days as i32)
+            }
+            GrowthModel::Seasonal {
+                base,
+                amplitude,
+                period_days,
+            } => {
                 let angle = 2.0 * std::f64::consts::PI * days as f64 / period_days;
                 base + amplitude * angle.sin()
             }
-            GrowthModel::StepFunction { step_at_day, multiplier } => {
-                if days >= *step_at_day { current * multiplier } else { current }
+            GrowthModel::StepFunction {
+                step_at_day,
+                multiplier,
+            } => {
+                if days >= *step_at_day {
+                    current * multiplier
+                } else {
+                    current
+                }
             }
         }
     }
@@ -167,7 +191,9 @@ impl CapacityPlanner {
     /// Forecast usage for a resource `days` days into the future.
     pub fn forecast(&self, resource: ResourceType, days: u32) -> CapacityForecast {
         // Find the most recent metric for this resource.
-        let latest = self.metrics.iter()
+        let latest = self
+            .metrics
+            .iter()
             .filter(|m| m.resource == resource)
             .max_by_key(|m| m.timestamp_unix);
 
@@ -176,7 +202,10 @@ impl CapacityPlanner {
             None => (0.0, f64::MAX),
         };
 
-        let model = self.models.get(&resource).cloned()
+        let model = self
+            .models
+            .get(&resource)
+            .cloned()
             .unwrap_or(GrowthModel::Linear { daily_rate: 0.0 });
 
         let forecast_values: Vec<f64> = (1..=days)
@@ -220,18 +249,25 @@ impl CapacityPlanner {
     /// Compute recommended capacity: peak forecast value * (1 + safety_margin_pct/100).
     pub fn recommended_capacity(forecast: &[f64], safety_margin_pct: f64) -> f64 {
         let max = forecast.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-        if max == f64::NEG_INFINITY { return 0.0; }
+        if max == f64::NEG_INFINITY {
+            return 0.0;
+        }
         max * (1.0 + safety_margin_pct)
     }
 
     /// Forecast all resources that have metrics.
     pub fn all_forecasts(&self, days: u32) -> Vec<CapacityForecast> {
-        let resources: Vec<ResourceType> = self.metrics.iter()
+        let resources: Vec<ResourceType> = self
+            .metrics
+            .iter()
             .map(|m| m.resource.clone())
             .collect::<std::collections::HashSet<_>>()
             .into_iter()
             .collect();
-        resources.into_iter().map(|r| self.forecast(r, days)).collect()
+        resources
+            .into_iter()
+            .map(|r| self.forecast(r, days))
+            .collect()
     }
 
     /// Generate human-readable scaling recommendations for constrained resources.
@@ -244,7 +280,9 @@ impl CapacityPlanner {
             let key = m.resource.to_string();
             match latest_per_resource.get(&key) {
                 Some(existing) if existing.timestamp_unix >= m.timestamp_unix => {}
-                _ => { latest_per_resource.insert(key, m); }
+                _ => {
+                    latest_per_resource.insert(key, m);
+                }
             }
         }
 
@@ -328,8 +366,16 @@ mod tests {
     #[test]
     fn test_planner_forecast() {
         let mut planner = CapacityPlanner::new();
-        planner.add_metric(CapacityMetric::new(ResourceType::Tokens, 500.0, 1000.0, 1000));
-        planner.set_growth_model(ResourceType::Tokens, GrowthModel::Linear { daily_rate: 50.0 });
+        planner.add_metric(CapacityMetric::new(
+            ResourceType::Tokens,
+            500.0,
+            1000.0,
+            1000,
+        ));
+        planner.set_growth_model(
+            ResourceType::Tokens,
+            GrowthModel::Linear { daily_rate: 50.0 },
+        );
         let forecast = planner.forecast(ResourceType::Tokens, 10);
         assert_eq!(forecast.forecast_values.len(), 10);
         assert!(forecast.days_to_capacity.is_some());
@@ -338,8 +384,16 @@ mod tests {
     #[test]
     fn test_scaling_recommendations() {
         let mut planner = CapacityPlanner::new();
-        planner.add_metric(CapacityMetric::new(ResourceType::ComputeUnits, 900.0, 1000.0, 1000));
-        planner.set_growth_model(ResourceType::ComputeUnits, GrowthModel::Linear { daily_rate: 20.0 });
+        planner.add_metric(CapacityMetric::new(
+            ResourceType::ComputeUnits,
+            900.0,
+            1000.0,
+            1000,
+        ));
+        planner.set_growth_model(
+            ResourceType::ComputeUnits,
+            GrowthModel::Linear { daily_rate: 20.0 },
+        );
         let recs = planner.scaling_recommendations();
         assert!(!recs.is_empty());
         assert!(recs[0].contains("ComputeUnits") || recs[0].contains("limits"));

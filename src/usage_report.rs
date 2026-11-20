@@ -174,7 +174,10 @@ impl UsageReportBuilder {
     /// Render a human-readable ASCII report.
     pub fn render_text(&self, report: &UsageReport) -> String {
         let mut out = String::new();
-        out.push_str(&format!("=== Usage Report: {} ===\n\n", report.period_label));
+        out.push_str(&format!(
+            "=== Usage Report: {} ===\n\n",
+            report.period_label
+        ));
         out.push_str(&format!("Total Cost:     ${:.4}\n", report.total_cost));
         out.push_str(&format!("Total Requests: {}\n\n", report.total_requests));
 
@@ -197,7 +200,12 @@ impl UsageReportBuilder {
         out.push_str("\n--- Cost Trend ---\n");
         for (day, cost) in &report.cost_trend {
             let bar_len = ((cost / report.total_cost.max(f64::EPSILON)) * 40.0) as usize;
-            out.push_str(&format!("  {} |{}| ${:.4}\n", day, "#".repeat(bar_len), cost));
+            out.push_str(&format!(
+                "  {} |{}| ${:.4}\n",
+                day,
+                "#".repeat(bar_len),
+                cost
+            ));
         }
 
         out
@@ -206,12 +214,18 @@ impl UsageReportBuilder {
     /// Render a CSV representation of the report (entity breakdown).
     pub fn render_csv(&self, report: &UsageReport) -> String {
         let mut out = String::new();
-        out.push_str("entity,total_cost_usd,total_tokens,request_count,top_model,avg_cost_per_request\n");
+        out.push_str(
+            "entity,total_cost_usd,total_tokens,request_count,top_model,avg_cost_per_request\n",
+        );
         for e in &report.by_entity {
             out.push_str(&format!(
                 "{},{:.6},{},{},{},{:.6}\n",
-                e.entity, e.total_cost, e.total_tokens, e.request_count,
-                e.top_model, e.avg_cost_per_request
+                e.entity,
+                e.total_cost,
+                e.total_tokens,
+                e.request_count,
+                e.top_model,
+                e.avg_cost_per_request
             ));
         }
         out
@@ -225,7 +239,9 @@ impl UsageReportBuilder {
         // entity → (cost, tokens, count, model_counts)
         let mut map: HashMap<String, (f64, u64, u64, HashMap<String, u64>)> = HashMap::new();
         for r in &self.records {
-            let entry = map.entry(r.entity.clone()).or_insert_with(|| (0.0, 0, 0, HashMap::new()));
+            let entry = map
+                .entry(r.entity.clone())
+                .or_insert_with(|| (0.0, 0, 0, HashMap::new()));
             entry.0 += r.cost_usd;
             entry.1 += r.tokens_in + r.tokens_out;
             entry.2 += 1;
@@ -251,7 +267,11 @@ impl UsageReportBuilder {
             })
             .collect();
 
-        summaries.sort_by(|a, b| b.total_cost.partial_cmp(&a.total_cost).unwrap_or(std::cmp::Ordering::Equal));
+        summaries.sort_by(|a, b| {
+            b.total_cost
+                .partial_cmp(&a.total_cost)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         summaries
     }
 
@@ -271,11 +291,19 @@ impl UsageReportBuilder {
                 model,
                 total_cost: cost,
                 request_count: count,
-                avg_tokens_per_req: if count > 0 { tokens as f64 / count as f64 } else { 0.0 },
+                avg_tokens_per_req: if count > 0 {
+                    tokens as f64 / count as f64
+                } else {
+                    0.0
+                },
             })
             .collect();
 
-        summaries.sort_by(|a, b| b.total_cost.partial_cmp(&a.total_cost).unwrap_or(std::cmp::Ordering::Equal));
+        summaries.sort_by(|a, b| {
+            b.total_cost
+                .partial_cmp(&a.total_cost)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         summaries
     }
 }

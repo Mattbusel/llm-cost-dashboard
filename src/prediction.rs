@@ -58,8 +58,7 @@ impl UsagePattern {
     fn record(&mut self, cost: f64) {
         self.sample_count += 1;
         // Online Welford-style mean update.
-        self.avg_cost_usd +=
-            (cost - self.avg_cost_usd) / self.sample_count as f64;
+        self.avg_cost_usd += (cost - self.avg_cost_usd) / self.sample_count as f64;
     }
 }
 
@@ -167,8 +166,7 @@ impl CostPredictor {
         let mut grid = [[0.0f64; 24]; 7];
         for day in 0u8..7 {
             for hour in 0u8..24 {
-                grid[day as usize][hour as usize] =
-                    self.matrix.get(hour, day).avg_cost_usd;
+                grid[day as usize][hour as usize] = self.matrix.get(hour, day).avg_cost_usd;
             }
         }
         WeeklyHeatmap { grid }
@@ -215,7 +213,10 @@ impl WeeklyHeatmap {
             .fold(f64::NEG_INFINITY, f64::max);
         let max = if max <= 0.0 { 1.0 } else { max };
 
-        let hours_header: String = (0..24).map(|h| format!("{h:2}")).collect::<Vec<_>>().join(" ");
+        let hours_header: String = (0..24)
+            .map(|h| format!("{h:2}"))
+            .collect::<Vec<_>>()
+            .join(" ");
 
         let mut out = String::new();
         out.push_str("     "); // padding for day label
@@ -232,7 +233,7 @@ impl WeeklyHeatmap {
                     r if r < 0.4 => '\u{2592}', // ▒
                     r if r < 0.6 => '\u{2593}', // ▓
                     r if r < 0.8 => '\u{2588}', // █
-                    _ => '\u{25A0}',             // ■
+                    _ => '\u{25A0}',            // ■
                 };
                 out.push(ch);
                 out.push(' ');
@@ -276,7 +277,11 @@ mod tests {
         // Can't guarantee what hour/day "now" is, but without learning
         // all cells are zero.
         let heatmap = p.weekly_heatmap();
-        let all_zero = heatmap.grid.iter().flat_map(|r| r.iter()).all(|&v| v == 0.0);
+        let all_zero = heatmap
+            .grid
+            .iter()
+            .flat_map(|r| r.iter())
+            .all(|&v| v == 0.0);
         assert!(all_zero);
     }
 

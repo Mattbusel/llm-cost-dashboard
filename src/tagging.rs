@@ -252,10 +252,7 @@ impl CostByTag {
 
     /// Sorted list of (tag_value, total_cost_usd) descending by cost.
     pub fn ranked(&self) -> Vec<(String, f64)> {
-        let mut v: Vec<(String, f64)> = self.totals
-            .iter()
-            .map(|(k, v)| (k.clone(), *v))
-            .collect();
+        let mut v: Vec<(String, f64)> = self.totals.iter().map(|(k, v)| (k.clone(), *v)).collect();
         v.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
         v
     }
@@ -293,14 +290,22 @@ impl TaggedLedger {
 
     /// Append one entry.
     pub fn add(&mut self, cost_usd: f64, timestamp_s: i64, tags: TagSet) {
-        self.entries.push(TaggedEntry { cost_usd, timestamp_s, tags });
+        self.entries.push(TaggedEntry {
+            cost_usd,
+            timestamp_s,
+            tags,
+        });
     }
 
     /// Aggregate all entries by a single tag dimension.
     pub fn by_tag(&self, tag_key: &str) -> CostByTag {
         let mut agg = CostByTag::default();
         for entry in &self.entries {
-            let value = entry.tags.get(tag_key).cloned().unwrap_or_else(|| "untagged".into());
+            let value = entry
+                .tags
+                .get(tag_key)
+                .cloned()
+                .unwrap_or_else(|| "untagged".into());
             agg.record(value, entry.cost_usd);
         }
         agg
@@ -569,10 +574,7 @@ impl TagStore {
     pub fn push(&mut self, req: TaggedRequest) {
         let idx = self.requests.len();
         for tag in &req.tags {
-            self.index
-                .entry(tag.key.clone())
-                .or_default()
-                .push(idx);
+            self.index.entry(tag.key.clone()).or_default().push(idx);
         }
         self.requests.push(req);
     }
@@ -640,10 +642,7 @@ impl TagStore {
         let mut groups: HashMap<String, GroupStats> = HashMap::new();
 
         for req in &self.requests {
-            let group_key = req
-                .tag_value(tag_key)
-                .unwrap_or("(untagged)")
-                .to_string();
+            let group_key = req.tag_value(tag_key).unwrap_or("(untagged)").to_string();
 
             let g = groups.entry(group_key).or_default();
             g.total_cost_usd += req.cost_usd;
@@ -718,7 +717,10 @@ mod tag_store_tests {
         let mut store = TagStore::new();
         store.push(req(1, "a", 0.01, vec![tag("env", "prod")]));
         store.push(req(2, "b", 0.02, vec![tag("team", "search")]));
-        let filter = TagFilter { key: Some("env".to_string()), ..Default::default() };
+        let filter = TagFilter {
+            key: Some("env".to_string()),
+            ..Default::default()
+        };
         let results = store.query(&filter);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].request_id, 1);
@@ -748,7 +750,10 @@ mod tag_store_tests {
         r2.timestamp = ts(2000);
         store.push(r1);
         store.push(r2);
-        let filter = TagFilter { since: Some(ts(1500)), ..Default::default() };
+        let filter = TagFilter {
+            since: Some(ts(1500)),
+            ..Default::default()
+        };
         let results = store.query(&filter);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].request_id, 2);
@@ -763,7 +768,10 @@ mod tag_store_tests {
         r2.timestamp = ts(2000);
         store.push(r1);
         store.push(r2);
-        let filter = TagFilter { until: Some(ts(1500)), ..Default::default() };
+        let filter = TagFilter {
+            until: Some(ts(1500)),
+            ..Default::default()
+        };
         let results = store.query(&filter);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].request_id, 1);
@@ -805,14 +813,17 @@ mod tag_store_tests {
     fn test_tag_report_top_10() {
         let mut store = TagStore::new();
         for i in 0..15u64 {
-            store.push(req(i, "a", i as f64 * 0.1, vec![tag("proj", &format!("p{i}"))]));
+            store.push(req(
+                i,
+                "a",
+                i as f64 * 0.1,
+                vec![tag("proj", &format!("p{i}"))],
+            ));
         }
         let report = TagReport::generate(&store, "proj");
         assert_eq!(report.top_groups.len(), 10);
         // First entry should have the highest cost.
-        assert!(
-            report.top_groups[0].1.total_cost_usd >= report.top_groups[1].1.total_cost_usd
-        );
+        assert!(report.top_groups[0].1.total_cost_usd >= report.top_groups[1].1.total_cost_usd);
     }
 
     #[test]
@@ -843,7 +854,12 @@ mod tag_store_tests {
 
     #[test]
     fn test_tagged_request_tag_value() {
-        let r = req(1, "a", 0.01, vec![tag("env", "prod"), tag("team", "search")]);
+        let r = req(
+            1,
+            "a",
+            0.01,
+            vec![tag("env", "prod"), tag("team", "search")],
+        );
         assert_eq!(r.tag_value("env"), Some("prod"));
         assert_eq!(r.tag_value("missing"), None);
     }

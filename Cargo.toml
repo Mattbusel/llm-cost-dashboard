@@ -1,10 +1,10 @@
 [package]
 name = "llm-cost-dashboard"
-version = "1.4.1"
+version = "1.4.2"
 edition = "2021"
 rust-version = "1.88"
-description = "Price every LLM API call from your logs, Claude Code transcripts or OpenAI usage exports (llm-prices table plus a built-in one, prompt caching, Batch API) and see spend, budgets and forecasts in a terminal dashboard, Prometheus or Rust"
-keywords = ["llm", "cost", "openai", "anthropic", "observability"]
+description = "Your provider's billing page is late and does not know which agent spent it. Price every LLM call from your own logs, Claude Code transcripts or OpenAI usage exports (llm-prices table, caching, Batch API): spend, budgets, forecast, Prometheus."
+keywords = ["llm", "cost", "observability", "openai", "anthropic"]
 categories = ["command-line-utilities", "visualization", "development-tools"]
 license = "MIT"
 repository = "https://github.com/Mattbusel/llm-cost-dashboard"

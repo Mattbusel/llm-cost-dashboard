@@ -148,8 +148,7 @@ impl BudgetPlanner {
             let prev = &self.allocations[self.current_period_index];
             (prev.effective_total() - prev.spent).max(0.0)
         };
-        let allocation =
-            BudgetAllocation::new(period, total, model_allocations, rollover);
+        let allocation = BudgetAllocation::new(period, total, model_allocations, rollover);
         self.allocations.push(allocation);
         self.current_period_index = self.allocations.len() - 1;
         Ok(())
@@ -243,8 +242,7 @@ impl BudgetPlanner {
         let prev = &self.allocations[self.current_period_index];
         let unspent = (prev.effective_total() - prev.spent).max(0.0);
         let period = prev.period.clone();
-        let rollover_alloc =
-            BudgetAllocation::new(period, 0.0, HashMap::new(), unspent);
+        let rollover_alloc = BudgetAllocation::new(period, 0.0, HashMap::new(), unspent);
         self.allocations.push(rollover_alloc);
         self.current_period_index = self.allocations.len() - 1;
     }
@@ -299,17 +297,16 @@ mod tests {
     use super::*;
 
     fn make_allocs(pairs: &[(&str, f64)]) -> HashMap<String, f64> {
-        pairs
-            .iter()
-            .map(|(k, v)| (k.to_string(), *v))
-            .collect()
+        pairs.iter().map(|(k, v)| (k.to_string(), *v)).collect()
     }
 
     #[test]
     fn test_allocation_validation_success() {
         let mut planner = BudgetPlanner::new();
         let allocs = make_allocs(&[("gpt-4", 600.0), ("claude", 400.0)]);
-        assert!(planner.allocate_period(BudgetPeriod::Monthly, 1000.0, allocs).is_ok());
+        assert!(planner
+            .allocate_period(BudgetPeriod::Monthly, 1000.0, allocs)
+            .is_ok());
     }
 
     #[test]
@@ -326,7 +323,9 @@ mod tests {
     fn test_spend_tracking() {
         let mut planner = BudgetPlanner::new();
         let allocs = make_allocs(&[("gpt-4", 600.0), ("claude", 400.0)]);
-        planner.allocate_period(BudgetPeriod::Monthly, 1000.0, allocs).unwrap();
+        planner
+            .allocate_period(BudgetPeriod::Monthly, 1000.0, allocs)
+            .unwrap();
 
         planner.record_spend("gpt-4", 100.0).unwrap();
         planner.record_spend("gpt-4", 50.0).unwrap();
@@ -339,9 +338,14 @@ mod tests {
     fn test_spend_unknown_model_error() {
         let mut planner = BudgetPlanner::new();
         let allocs = make_allocs(&[("gpt-4", 600.0)]);
-        planner.allocate_period(BudgetPeriod::Monthly, 1000.0, allocs).unwrap();
+        planner
+            .allocate_period(BudgetPeriod::Monthly, 1000.0, allocs)
+            .unwrap();
         let err = planner.record_spend("unknown-model", 50.0).unwrap_err();
-        assert_eq!(err, BudgetError::ModelNotAllocated("unknown-model".to_string()));
+        assert_eq!(
+            err,
+            BudgetError::ModelNotAllocated("unknown-model".to_string())
+        );
     }
 
     #[test]
@@ -355,7 +359,9 @@ mod tests {
     fn test_period_utilization() {
         let mut planner = BudgetPlanner::new();
         let allocs = make_allocs(&[("gpt-4", 1000.0)]);
-        planner.allocate_period(BudgetPeriod::Monthly, 1000.0, allocs).unwrap();
+        planner
+            .allocate_period(BudgetPeriod::Monthly, 1000.0, allocs)
+            .unwrap();
         planner.record_spend("gpt-4", 250.0).unwrap();
         let util = planner.period_utilization();
         assert!((util - 25.0).abs() < 1e-9, "utilization={util}");
@@ -365,21 +371,29 @@ mod tests {
     fn test_rollover_logic() {
         let mut planner = BudgetPlanner::new();
         let allocs = make_allocs(&[("gpt-4", 1000.0)]);
-        planner.allocate_period(BudgetPeriod::Monthly, 1000.0, allocs).unwrap();
+        planner
+            .allocate_period(BudgetPeriod::Monthly, 1000.0, allocs)
+            .unwrap();
         planner.record_spend("gpt-4", 400.0).unwrap();
 
         planner.rollover_to_next();
 
         // New period should have rollover = 1000 - 400 = 600.
         let new_alloc = &planner.allocations[planner.current_period_index];
-        assert!((new_alloc.rollover - 600.0).abs() < 1e-9, "rollover={}", new_alloc.rollover);
+        assert!(
+            (new_alloc.rollover - 600.0).abs() < 1e-9,
+            "rollover={}",
+            new_alloc.rollover
+        );
     }
 
     #[test]
     fn test_alert_threshold() {
         let mut planner = BudgetPlanner::new();
         let allocs = make_allocs(&[("gpt-4", 100.0), ("claude", 100.0)]);
-        planner.allocate_period(BudgetPeriod::Monthly, 200.0, allocs).unwrap();
+        planner
+            .allocate_period(BudgetPeriod::Monthly, 200.0, allocs)
+            .unwrap();
         // Spend 85% of gpt-4's allocation.
         planner.record_spend("gpt-4", 85.0).unwrap();
         // Spend 50% of claude's allocation.
@@ -393,7 +407,10 @@ mod tests {
 
     #[test]
     fn test_budget_error_display() {
-        assert_eq!(BudgetError::NoPeriodActive.to_string(), "no active budget period");
+        assert_eq!(
+            BudgetError::NoPeriodActive.to_string(),
+            "no active budget period"
+        );
         assert!(BudgetError::AllocationExceedsBudget
             .to_string()
             .contains("exceed"));
@@ -406,7 +423,9 @@ mod tests {
     fn test_quarterly_period() {
         let mut planner = BudgetPlanner::new();
         let allocs = make_allocs(&[("model-a", 3000.0)]);
-        planner.allocate_period(BudgetPeriod::Quarterly, 3000.0, allocs).unwrap();
+        planner
+            .allocate_period(BudgetPeriod::Quarterly, 3000.0, allocs)
+            .unwrap();
         planner.record_spend("model-a", 1000.0).unwrap();
         let util = planner.period_utilization();
         assert!((util - 33.333_333).abs() < 0.001, "util={util}");

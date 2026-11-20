@@ -166,12 +166,7 @@ impl CostSession {
     ///
     /// Increments all usage counters, then evaluates limits in order:
     /// `Cost → Tokens → Requests`.  The first exceeded limit wins.
-    pub fn record_request(
-        &mut self,
-        tokens_in: u64,
-        tokens_out: u64,
-        cost: f64,
-    ) -> SessionStatus {
+    pub fn record_request(&mut self, tokens_in: u64, tokens_out: u64, cost: f64) -> SessionStatus {
         let now = now_unix_secs();
         if self.usage.started_at == 0 {
             self.usage.started_at = now;
@@ -368,10 +363,7 @@ mod tests {
         let id = mgr.create_session("gpt-4", budget(0.05, 100_000, 100));
         mgr.record(&id, 100, 100, 0.03).unwrap();
         let status = mgr.record(&id, 100, 100, 0.03).unwrap();
-        assert_eq!(
-            status,
-            SessionStatus::BudgetExhausted(BudgetLimit::Cost)
-        );
+        assert_eq!(status, SessionStatus::BudgetExhausted(BudgetLimit::Cost));
     }
 
     #[test]
@@ -380,10 +372,7 @@ mod tests {
         let id = mgr.create_session("m", budget(100.0, 500, 100));
         mgr.record(&id, 200, 200, 0.001).unwrap();
         let status = mgr.record(&id, 200, 200, 0.001).unwrap();
-        assert_eq!(
-            status,
-            SessionStatus::BudgetExhausted(BudgetLimit::Tokens)
-        );
+        assert_eq!(status, SessionStatus::BudgetExhausted(BudgetLimit::Tokens));
     }
 
     #[test]
@@ -402,12 +391,15 @@ mod tests {
     #[test]
     fn warn_threshold_fires() {
         let mgr = SessionManager::new();
-        let id = mgr.create_session("m", SessionBudget {
-            max_cost: 1.0,
-            max_tokens: 1_000_000,
-            max_requests: 1_000,
-            warn_at_pct: 0.80,
-        });
+        let id = mgr.create_session(
+            "m",
+            SessionBudget {
+                max_cost: 1.0,
+                max_tokens: 1_000_000,
+                max_requests: 1_000,
+                warn_at_pct: 0.80,
+            },
+        );
         // 0.85 / 1.0 = 85% > 80%
         let status = mgr.record(&id, 100, 100, 0.85).unwrap();
         assert!(
@@ -470,12 +462,16 @@ mod tests {
     #[test]
     fn utilization_is_max_of_dimensions() {
         let id = SessionId::new("s");
-        let mut session = CostSession::new(id, "m", SessionBudget {
-            max_cost: 10.0,
-            max_tokens: 100,
-            max_requests: 100,
-            warn_at_pct: 0.80,
-        });
+        let mut session = CostSession::new(
+            id,
+            "m",
+            SessionBudget {
+                max_cost: 10.0,
+                max_tokens: 100,
+                max_requests: 100,
+                warn_at_pct: 0.80,
+            },
+        );
         // tokens: 90/100 = 0.9, cost: 0.5/10 = 0.05, requests: 1/100 = 0.01
         session.record_request(45, 45, 0.5);
         let u = session.utilization();

@@ -389,8 +389,7 @@ fn event_loop(
                 }
             }
         }
-        let records_snapshot: Vec<crate::cost::CostRecord> =
-            app.ledger.records().to_vec();
+        let records_snapshot: Vec<crate::cost::CostRecord> = app.ledger.records().to_vec();
 
         if app.explorer_active {
             terminal
@@ -497,11 +496,16 @@ mod webhook_tests {
         std::thread::spawn(move || {
             for stream in listener.incoming().flatten() {
                 let mut stream = stream;
-                stream.set_read_timeout(Some(std::time::Duration::from_secs(2))).ok();
+                stream
+                    .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+                    .ok();
                 let mut buf = [0u8; 4096];
                 let n = stream.read(&mut buf).unwrap_or(0);
-                tx.send(String::from_utf8_lossy(&buf[..n]).into_owned()).ok();
-                let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                tx.send(String::from_utf8_lossy(&buf[..n]).into_owned())
+                    .ok();
+                let _ = stream.write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                );
             }
         });
         let mut app = App::new(10.0);
@@ -515,6 +519,10 @@ mod webhook_tests {
         }
         let first = rx.recv_timeout(std::time::Duration::from_secs(10)).unwrap();
         assert!(first.starts_with("POST /hook"), "{first}");
-        assert!(rx.recv_timeout(std::time::Duration::from_millis(1500)).is_err(), "fired twice");
+        assert!(
+            rx.recv_timeout(std::time::Duration::from_millis(1500))
+                .is_err(),
+            "fired twice"
+        );
     }
 }

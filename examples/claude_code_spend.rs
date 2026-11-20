@@ -49,15 +49,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             m.model,
             m.request_count,
             m.total_cost_usd,
-            if known { "" } else { "  (not in the price table: guessed)" }
+            if known {
+                ""
+            } else {
+                "  (not in the price table: guessed)"
+            }
         );
     }
     let mut days: BTreeMap<String, f64> = BTreeMap::new();
     for r in ledger.records() {
-        *days.entry(r.timestamp.format("%Y-%m-%d").to_string()).or_default() += r.total_cost_usd;
+        *days
+            .entry(r.timestamp.format("%Y-%m-%d").to_string())
+            .or_default() += r.total_cost_usd;
     }
     println!("\nLast 7 days:");
-    for (day, usd) in days.iter().rev().take(7).collect::<Vec<_>>().into_iter().rev() {
+    for (day, usd) in days
+        .iter()
+        .rev()
+        .take(7)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+    {
         println!("  {day}  ${usd:>9.2}");
     }
     Ok(())

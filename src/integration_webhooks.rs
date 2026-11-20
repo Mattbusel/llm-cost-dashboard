@@ -298,8 +298,11 @@ impl WebhookManager {
             .iter()
             .filter(|entry| entry.active && entry.wants_event(&event_type))
             .map(|entry| {
-                let payload =
-                    WebhookPayload::new(event.clone(), tenant_id.map(str::to_string), &entry.secret);
+                let payload = WebhookPayload::new(
+                    event.clone(),
+                    tenant_id.map(str::to_string),
+                    &entry.secret,
+                );
                 WebhookDelivery {
                     subscription_id: entry.id.clone(),
                     payload,
@@ -309,7 +312,10 @@ impl WebhookManager {
             })
             .collect();
 
-        let mut queue = self.delivery_queue.lock().unwrap_or_else(|e| e.into_inner());
+        let mut queue = self
+            .delivery_queue
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         for delivery in deliveries.drain(..) {
             // Evict oldest entry if at capacity.
             if queue.len() >= 1_000 {
@@ -339,11 +345,14 @@ impl WebhookManager {
             self.total_attempts.fetch_add(1, Ordering::Relaxed);
 
             // Pseudo-random success: hash subscription_id + attempt_num.
-            let hash = fnv1a_hash(
-                format!("{}:{}", delivery.subscription_id, attempt_num).as_bytes(),
-            );
+            let hash =
+                fnv1a_hash(format!("{}:{}", delivery.subscription_id, attempt_num).as_bytes());
             // ~70 % success rate on first attempt, ~85 % on subsequent.
-            let threshold: u64 = if attempt_num == 1 { u64::MAX / 10 * 7 } else { u64::MAX / 100 * 85 };
+            let threshold: u64 = if attempt_num == 1 {
+                u64::MAX / 10 * 7
+            } else {
+                u64::MAX / 100 * 85
+            };
             let success = hash < threshold;
             let response_code: Option<u16> = if success { Some(200) } else { Some(500) };
 
@@ -386,7 +395,10 @@ impl WebhookManager {
 
     /// Number of deliveries currently pending in the queue.
     pub fn pending_deliveries(&self) -> usize {
-        let queue = self.delivery_queue.lock().unwrap_or_else(|e| e.into_inner());
+        let queue = self
+            .delivery_queue
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         queue
             .iter()
             .filter(|d| matches!(d.final_status, DeliveryStatus::Pending))
@@ -428,7 +440,10 @@ impl WebhookManager {
     #[deprecated(since = "1.3.0", note = "simulated delivery; nothing is sent")]
     pub fn process_pending(&self) {
         let pending: Vec<WebhookDelivery> = {
-            let mut queue = self.delivery_queue.lock().unwrap_or_else(|e| e.into_inner());
+            let mut queue = self
+                .delivery_queue
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             let pending: Vec<WebhookDelivery> = queue
                 .drain(..)
                 .filter(|d| matches!(d.final_status, DeliveryStatus::Pending))
@@ -440,7 +455,10 @@ impl WebhookManager {
             #[allow(deprecated)]
             self.simulate_delivery(&mut delivery);
             // Re-enqueue completed deliveries for audit trail.
-            let mut queue = self.delivery_queue.lock().unwrap_or_else(|e| e.into_inner());
+            let mut queue = self
+                .delivery_queue
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             if queue.len() < 1_000 {
                 queue.push_back(delivery);
             }
@@ -460,8 +478,9 @@ fn unix_now() -> u64 {
 fn fnv1a_hash(data: &[u8]) -> u64 {
     const FNV_OFFSET: u64 = 14_695_981_039_346_656_037;
     const FNV_PRIME: u64 = 1_099_511_628_211;
-    data.iter()
-        .fold(FNV_OFFSET, |acc, &b| (acc ^ b as u64).wrapping_mul(FNV_PRIME))
+    data.iter().fold(FNV_OFFSET, |acc, &b| {
+        (acc ^ b as u64).wrapping_mul(FNV_PRIME)
+    })
 }
 
 #[cfg(test)]
@@ -471,7 +490,11 @@ mod tests {
     #[test]
     fn event_type_strings() {
         assert_eq!(
-            WebhookEvent::CostThresholdExceeded { amount: 1.0, threshold: 0.5 }.event_type(),
+            WebhookEvent::CostThresholdExceeded {
+                amount: 1.0,
+                threshold: 0.5
+            }
+            .event_type(),
             "cost_threshold_exceeded"
         );
         assert_eq!(
@@ -537,7 +560,12 @@ mod tests {
     fn simulate_delivery_updates_stats() {
         let mgr = WebhookManager::new();
         mgr.subscribe("https://example.com", "s", vec![]);
-        mgr.emit(WebhookEvent::UsageSpike { pct_increase: 200.0 }, None);
+        mgr.emit(
+            WebhookEvent::UsageSpike {
+                pct_increase: 200.0,
+            },
+            None,
+        );
         mgr.process_pending();
 
         let stats = mgr.delivery_stats();
@@ -565,11 +593,7 @@ mod tests {
 
     #[test]
     fn wants_event_filtered() {
-        let sub = WebhookSubscription::new(
-            "https://x.com",
-            "s",
-            vec!["budget_alert".to_string()],
-        );
+        let sub = WebhookSubscription::new("https://x.com", "s", vec!["budget_alert".to_string()]);
         assert!(sub.wants_event("budget_alert"));
         assert!(!sub.wants_event("anomaly_detected"));
     }

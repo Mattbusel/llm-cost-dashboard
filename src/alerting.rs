@@ -93,32 +93,24 @@ impl AlertKind {
     pub fn message(&self) -> String {
         match self {
             AlertKind::BudgetExceeded { spent, limit } => {
-                format!(
-                    "Budget exceeded: spent ${spent:.2} of ${limit:.2} monthly limit"
-                )
+                format!("Budget exceeded: spent ${spent:.2} of ${limit:.2} monthly limit")
             }
             AlertKind::BudgetWarning { spent, limit, pct } => {
-                format!(
-                    "Budget warning: {pct:.1}% consumed (${spent:.2} / ${limit:.2})"
-                )
+                format!("Budget warning: {pct:.1}% consumed (${spent:.2} / ${limit:.2})")
             }
             AlertKind::CostAnomaly {
                 model,
                 cost,
                 z_score,
             } => {
-                format!(
-                    "Cost anomaly detected on {model}: ${cost:.6} (Z={z_score:.2})"
-                )
+                format!("Cost anomaly detected on {model}: ${cost:.6} (Z={z_score:.2})")
             }
             AlertKind::DailySpendSpike {
                 today,
                 avg,
                 multiplier,
             } => {
-                format!(
-                    "Daily spend spike: ${today:.2} today vs ${avg:.2} avg ({multiplier:.1}x)"
-                )
+                format!("Daily spend spike: ${today:.2} today vs ${avg:.2} avg ({multiplier:.1}x)")
             }
         }
     }
@@ -220,12 +212,7 @@ impl WebhookAlerter {
         let payload = self.build_payload(&alert);
 
         for url in &self.webhooks {
-            let result = self
-                .client
-                .post(url)
-                .json(&payload)
-                .send()
-                .await;
+            let result = self.client.post(url).json(&payload).send().await;
 
             match result {
                 Ok(resp) => {
@@ -410,10 +397,29 @@ mod tests {
     #[test]
     fn test_alert_kind_cooldown_keys_unique() {
         let keys = [
-            AlertKind::BudgetExceeded { spent: 0.0, limit: 0.0 }.cooldown_key(),
-            AlertKind::BudgetWarning { spent: 0.0, limit: 0.0, pct: 0.0 }.cooldown_key(),
-            AlertKind::CostAnomaly { model: "m".into(), cost: 0.0, z_score: 0.0 }.cooldown_key(),
-            AlertKind::DailySpendSpike { today: 0.0, avg: 0.0, multiplier: 0.0 }.cooldown_key(),
+            AlertKind::BudgetExceeded {
+                spent: 0.0,
+                limit: 0.0,
+            }
+            .cooldown_key(),
+            AlertKind::BudgetWarning {
+                spent: 0.0,
+                limit: 0.0,
+                pct: 0.0,
+            }
+            .cooldown_key(),
+            AlertKind::CostAnomaly {
+                model: "m".into(),
+                cost: 0.0,
+                z_score: 0.0,
+            }
+            .cooldown_key(),
+            AlertKind::DailySpendSpike {
+                today: 0.0,
+                avg: 0.0,
+                multiplier: 0.0,
+            }
+            .cooldown_key(),
         ];
         let unique: std::collections::HashSet<_> = keys.iter().collect();
         assert_eq!(unique.len(), 4);
@@ -421,7 +427,10 @@ mod tests {
 
     #[test]
     fn test_alert_message_budget_exceeded() {
-        let kind = AlertKind::BudgetExceeded { spent: 12.34, limit: 10.0 };
+        let kind = AlertKind::BudgetExceeded {
+            spent: 12.34,
+            limit: 10.0,
+        };
         let msg = kind.message();
         assert!(msg.contains("12.34"));
         assert!(msg.contains("10.00"));
@@ -429,7 +438,11 @@ mod tests {
 
     #[test]
     fn test_alert_message_budget_warning() {
-        let kind = AlertKind::BudgetWarning { spent: 85.0, limit: 100.0, pct: 85.0 };
+        let kind = AlertKind::BudgetWarning {
+            spent: 85.0,
+            limit: 100.0,
+            pct: 85.0,
+        };
         let msg = kind.message();
         assert!(msg.contains("85.0"));
         assert!(msg.contains("100.00"));
@@ -449,7 +462,11 @@ mod tests {
 
     #[test]
     fn test_alert_message_daily_spike() {
-        let kind = AlertKind::DailySpendSpike { today: 20.0, avg: 5.0, multiplier: 4.0 };
+        let kind = AlertKind::DailySpendSpike {
+            today: 20.0,
+            avg: 5.0,
+            multiplier: 4.0,
+        };
         let msg = kind.message();
         assert!(msg.contains("20.00"));
         assert!(msg.contains("4.0x"));
@@ -457,7 +474,10 @@ mod tests {
 
     #[test]
     fn test_alert_new_populates_fields() {
-        let kind = AlertKind::BudgetExceeded { spent: 1.0, limit: 0.5 };
+        let kind = AlertKind::BudgetExceeded {
+            spent: 1.0,
+            limit: 0.5,
+        };
         let alert = Alert::new(kind);
         assert!(!alert.id.is_empty());
         assert!(!alert.timestamp.is_empty());

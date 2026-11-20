@@ -367,10 +367,7 @@ mod tests {
     use std::collections::HashMap;
 
     fn make_snapshot(kvs: &[(&str, f64)], timestamp: u64) -> MetricSnapshot {
-        let values: HashMap<String, f64> = kvs
-            .iter()
-            .map(|(k, v)| (k.to_string(), *v))
-            .collect();
+        let values: HashMap<String, f64> = kvs.iter().map(|(k, v)| (k.to_string(), *v)).collect();
         MetricSnapshot::new(values, timestamp)
     }
 

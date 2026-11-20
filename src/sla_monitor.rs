@@ -4,8 +4,8 @@
 //! records observations, and reports compliance status with per-metric reports.
 
 use std::collections::VecDeque;
-use std::sync::Mutex;
 use std::fmt;
+use std::sync::Mutex;
 
 // ── SlaMetricType ─────────────────────────────────────────────────────────────
 
@@ -95,7 +95,10 @@ impl fmt::Display for SlaStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SlaStatus::Compliant => write!(f, "Compliant"),
-            SlaStatus::AtRisk { current_value, target } => {
+            SlaStatus::AtRisk {
+                current_value,
+                target,
+            } => {
                 write!(f, "AtRisk(current={current_value:.2}, target={target:.2})")
             }
             SlaStatus::Breached { violation_pct } => {
@@ -158,7 +161,12 @@ impl SlaMonitor {
     /// buffer exceeds `MAX_OBSERVATIONS`.
     pub fn record(&self, metric_type: SlaMetricType, value: f64, success: bool) {
         let ts = current_unix_ts();
-        let obs = SlaObservation { metric_type, value, timestamp_unix: ts, success };
+        let obs = SlaObservation {
+            metric_type,
+            value,
+            timestamp_unix: ts,
+            success,
+        };
         if let Ok(mut deq) = self.observations.lock() {
             if deq.len() >= MAX_OBSERVATIONS {
                 deq.pop_front();
@@ -181,7 +189,10 @@ impl SlaMonitor {
             SlaStatus::Breached { violation_pct }
         } else if violation_pct > target.breach_threshold_pct * 0.5 {
             let last = window_obs.last().map(|o| o.value).unwrap_or(0.0);
-            SlaStatus::AtRisk { current_value: last, target: target.target_value }
+            SlaStatus::AtRisk {
+                current_value: last,
+                target: target.target_value,
+            }
         } else {
             SlaStatus::Compliant
         }
@@ -225,22 +236,24 @@ impl SlaMonitor {
 
     /// Generate reports for all registered targets.
     pub fn all_reports(&self) -> Vec<SlaReport> {
-        let types: Vec<SlaMetricType> = self.targets.iter().map(|t| t.metric_type.clone()).collect();
+        let types: Vec<SlaMetricType> =
+            self.targets.iter().map(|t| t.metric_type.clone()).collect();
         types.into_iter().filter_map(|m| self.report(m)).collect()
     }
 
     /// Whether any target is currently in `Breached` status.
     pub fn is_any_breached(&self) -> bool {
-        self.targets.iter().any(|t| {
-            matches!(self.compute_status(t), SlaStatus::Breached { .. })
-        })
+        self.targets
+            .iter()
+            .any(|t| matches!(self.compute_status(t), SlaStatus::Breached { .. }))
     }
 
     /// Fraction (0-100) of successful observations within the given window.
     pub fn uptime_pct(&self, window_secs: u64) -> f64 {
         let now = current_unix_ts();
         if let Ok(deq) = self.observations.lock() {
-            let in_window: Vec<&SlaObservation> = deq.iter()
+            let in_window: Vec<&SlaObservation> = deq
+                .iter()
                 .filter(|o| o.timestamp_unix >= now.saturating_sub(window_secs))
                 .collect();
             if in_window.is_empty() {
@@ -279,7 +292,10 @@ impl SlaMonitor {
     }
 
     fn count_breaches(&self, target: &SlaTarget, observations: &[SlaObservation]) -> usize {
-        observations.iter().filter(|o| is_breach(target, o.value)).count()
+        observations
+            .iter()
+            .filter(|o| is_breach(target, o.value))
+            .count()
     }
 }
 

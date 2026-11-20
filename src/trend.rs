@@ -242,14 +242,10 @@ impl TrendAnalyzer {
     pub fn seasonality(points: &[TrendPoint]) -> SeasonalityReport {
         let day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-        let mut sums: HashMap<String, f64> = day_names
-            .iter()
-            .map(|&d| (d.to_string(), 0.0))
-            .collect();
-        let mut counts: HashMap<String, u64> = day_names
-            .iter()
-            .map(|&d| (d.to_string(), 0))
-            .collect();
+        let mut sums: HashMap<String, f64> =
+            day_names.iter().map(|&d| (d.to_string(), 0.0)).collect();
+        let mut counts: HashMap<String, u64> =
+            day_names.iter().map(|&d| (d.to_string(), 0)).collect();
 
         for point in points {
             let day_name = weekday_name(point.timestamp.weekday());
@@ -267,14 +263,14 @@ impl TrendAnalyzer {
             })
             .collect();
 
-        let get_avg = |day: &str| -> f64 {
-            day_averages.get(day).copied().unwrap_or(0.0)
-        };
+        let get_avg = |day: &str| -> f64 { day_averages.get(day).copied().unwrap_or(0.0) };
 
         let highest_spend_day = day_names
             .iter()
             .max_by(|a, b| {
-                get_avg(a).partial_cmp(&get_avg(b)).unwrap_or(std::cmp::Ordering::Equal)
+                get_avg(a)
+                    .partial_cmp(&get_avg(b))
+                    .unwrap_or(std::cmp::Ordering::Equal)
             })
             .unwrap_or(&"Mon")
             .to_string();
@@ -282,7 +278,9 @@ impl TrendAnalyzer {
         let lowest_spend_day = day_names
             .iter()
             .min_by(|a, b| {
-                get_avg(a).partial_cmp(&get_avg(b)).unwrap_or(std::cmp::Ordering::Equal)
+                get_avg(a)
+                    .partial_cmp(&get_avg(b))
+                    .unwrap_or(std::cmp::Ordering::Equal)
             })
             .unwrap_or(&"Mon")
             .to_string();
@@ -361,7 +359,10 @@ mod tests {
             .collect();
         let result = TrendAnalyzer::fit(&pts);
         assert!((result.slope_usd_per_day - 1.0).abs() < 1e-9);
-        assert!(matches!(result.trend_direction, TrendDirection::Rising { .. }));
+        assert!(matches!(
+            result.trend_direction,
+            TrendDirection::Rising { .. }
+        ));
     }
 
     #[test]
@@ -374,7 +375,10 @@ mod tests {
             .collect();
         let result = TrendAnalyzer::fit(&pts);
         assert!(result.slope_usd_per_day < 0.0);
-        assert!(matches!(result.trend_direction, TrendDirection::Falling { .. }));
+        assert!(matches!(
+            result.trend_direction,
+            TrendDirection::Falling { .. }
+        ));
     }
 
     #[test]
@@ -503,8 +507,14 @@ mod tests {
     fn seasonality_identifies_highest_day() {
         // Jan 1 2024 = Mon ($5), Jan 2 = Tue ($100)
         let pts = vec![
-            TrendPoint { timestamp: day(2024, 1, 1), cost_usd: 5.0 },
-            TrendPoint { timestamp: day(2024, 1, 2), cost_usd: 100.0 },
+            TrendPoint {
+                timestamp: day(2024, 1, 1),
+                cost_usd: 5.0,
+            },
+            TrendPoint {
+                timestamp: day(2024, 1, 2),
+                cost_usd: 100.0,
+            },
         ];
         let report = TrendAnalyzer::seasonality(&pts);
         assert_eq!(report.highest_spend_day, "Tue");

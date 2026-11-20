@@ -181,9 +181,7 @@ fn window_cost(ledger: &CostLedger, window: &AlertWindow) -> f64 {
     let now = Utc::now();
     match window {
         AlertWindow::Rolling(dur) => {
-            let cutoff = now
-                - chrono::Duration::from_std(*dur)
-                    .unwrap_or(chrono::Duration::MAX);
+            let cutoff = now - chrono::Duration::from_std(*dur).unwrap_or(chrono::Duration::MAX);
             ledger
                 .records()
                 .iter()
@@ -191,18 +189,16 @@ fn window_cost(ledger: &CostLedger, window: &AlertWindow) -> f64 {
                 .map(|r| r.total_cost_usd)
                 .sum()
         }
-        AlertWindow::Daily => {
-            ledger
-                .records()
-                .iter()
-                .filter(|r| {
-                    r.timestamp.year() == now.year()
-                        && r.timestamp.month() == now.month()
-                        && r.timestamp.day() == now.day()
-                })
-                .map(|r| r.total_cost_usd)
-                .sum()
-        }
+        AlertWindow::Daily => ledger
+            .records()
+            .iter()
+            .filter(|r| {
+                r.timestamp.year() == now.year()
+                    && r.timestamp.month() == now.month()
+                    && r.timestamp.day() == now.day()
+            })
+            .map(|r| r.total_cost_usd)
+            .sum(),
         AlertWindow::Weekly => {
             let cutoff = now - chrono::Duration::days(7);
             ledger
@@ -212,16 +208,12 @@ fn window_cost(ledger: &CostLedger, window: &AlertWindow) -> f64 {
                 .map(|r| r.total_cost_usd)
                 .sum()
         }
-        AlertWindow::Monthly => {
-            ledger
-                .records()
-                .iter()
-                .filter(|r| {
-                    r.timestamp.year() == now.year() && r.timestamp.month() == now.month()
-                })
-                .map(|r| r.total_cost_usd)
-                .sum()
-        }
+        AlertWindow::Monthly => ledger
+            .records()
+            .iter()
+            .filter(|r| r.timestamp.year() == now.year() && r.timestamp.month() == now.month())
+            .map(|r| r.total_cost_usd)
+            .sum(),
     }
 }
 
@@ -601,7 +593,10 @@ mod tests {
         );
         // RFC 4231 test case 6: key longer than the block size.
         assert_eq!(
-            hmac_sha256_hex(&[0xaa; 131], b"Test Using Larger Than Block-Size Key - Hash Key First"),
+            hmac_sha256_hex(
+                &[0xaa; 131],
+                b"Test Using Larger Than Block-Size Key - Hash Key First"
+            ),
             "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54"
         );
     }
@@ -628,7 +623,10 @@ mod tests {
         // HMAC-SHA256 of "" with key "" should equal
         // b613679a0814d9ec772f95d778c35fc5ff1697c493715653c6c712144292c5ad
         let sig = hmac_sha256_hex(b"", b"");
-        assert_eq!(sig, "b613679a0814d9ec772f95d778c35fc5ff1697c493715653c6c712144292c5ad");
+        assert_eq!(
+            sig,
+            "b613679a0814d9ec772f95d778c35fc5ff1697c493715653c6c712144292c5ad"
+        );
     }
 
     #[test]

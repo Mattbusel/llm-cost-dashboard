@@ -52,10 +52,10 @@ impl SlaTier {
     /// Display name for the tier.
     pub fn display_name(self) -> &'static str {
         match self {
-            SlaTier::Premium  => "Premium",
+            SlaTier::Premium => "Premium",
             SlaTier::Standard => "Standard",
-            SlaTier::Economy  => "Economy",
-            SlaTier::Unknown  => "Unknown",
+            SlaTier::Economy => "Economy",
+            SlaTier::Unknown => "Unknown",
         }
     }
 }
@@ -82,15 +82,13 @@ pub struct SlaAlert {
 }
 
 /// Budget configuration for one SLA tier.
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct TierBudget {
     /// Daily budget in USD. `None` = unlimited.
     pub daily_usd: Option<f64>,
     /// Monthly budget in USD. `None` = unlimited.
     pub monthly_usd: Option<f64>,
 }
-
 
 /// Full SLA configuration.
 #[derive(Debug, Clone)]
@@ -105,30 +103,51 @@ impl Default for SlaConfig {
     fn default() -> Self {
         let model_tiers = vec![
             // Standard (must come before Premium entries that are substrings).
-            ("gpt-4o-mini".to_string(),       SlaTier::Standard),
-            ("claude-3-sonnet".to_string(),   SlaTier::Standard),
-            ("claude-sonnet".to_string(),     SlaTier::Standard),
-            ("gpt-4-turbo".to_string(),       SlaTier::Standard),
+            ("gpt-4o-mini".to_string(), SlaTier::Standard),
+            ("claude-3-sonnet".to_string(), SlaTier::Standard),
+            ("claude-sonnet".to_string(), SlaTier::Standard),
+            ("gpt-4-turbo".to_string(), SlaTier::Standard),
             // Premium.
-            ("gpt-4o".to_string(),           SlaTier::Premium),
-            ("claude-3-opus".to_string(),     SlaTier::Premium),
-            ("claude-opus".to_string(),       SlaTier::Premium),
-            ("o1".to_string(),               SlaTier::Premium),
-            ("o3".to_string(),               SlaTier::Premium),
+            ("gpt-4o".to_string(), SlaTier::Premium),
+            ("claude-3-opus".to_string(), SlaTier::Premium),
+            ("claude-opus".to_string(), SlaTier::Premium),
+            ("o1".to_string(), SlaTier::Premium),
+            ("o3".to_string(), SlaTier::Premium),
             // Economy.
-            ("gpt-3.5".to_string(),           SlaTier::Economy),
-            ("claude-3-haiku".to_string(),    SlaTier::Economy),
-            ("claude-haiku".to_string(),      SlaTier::Economy),
-            ("gemini-flash".to_string(),      SlaTier::Economy),
-            ("mistral-7b".to_string(),        SlaTier::Economy),
+            ("gpt-3.5".to_string(), SlaTier::Economy),
+            ("claude-3-haiku".to_string(), SlaTier::Economy),
+            ("claude-haiku".to_string(), SlaTier::Economy),
+            ("gemini-flash".to_string(), SlaTier::Economy),
+            ("mistral-7b".to_string(), SlaTier::Economy),
         ];
 
         let mut budgets = HashMap::new();
-        budgets.insert(SlaTier::Premium,  TierBudget { daily_usd: Some(50.0),  monthly_usd: Some(500.0) });
-        budgets.insert(SlaTier::Standard, TierBudget { daily_usd: Some(100.0), monthly_usd: Some(1000.0) });
-        budgets.insert(SlaTier::Economy,  TierBudget { daily_usd: None,         monthly_usd: Some(200.0) });
+        budgets.insert(
+            SlaTier::Premium,
+            TierBudget {
+                daily_usd: Some(50.0),
+                monthly_usd: Some(500.0),
+            },
+        );
+        budgets.insert(
+            SlaTier::Standard,
+            TierBudget {
+                daily_usd: Some(100.0),
+                monthly_usd: Some(1000.0),
+            },
+        );
+        budgets.insert(
+            SlaTier::Economy,
+            TierBudget {
+                daily_usd: None,
+                monthly_usd: Some(200.0),
+            },
+        );
 
-        Self { model_tiers, budgets }
+        Self {
+            model_tiers,
+            budgets,
+        }
     }
 }
 
@@ -185,7 +204,10 @@ pub struct SlaTierTracker {
 impl SlaTierTracker {
     /// Create a new tracker.
     pub fn new(cfg: SlaConfig) -> Self {
-        Self { cfg, accum: HashMap::new() }
+        Self {
+            cfg,
+            accum: HashMap::new(),
+        }
     }
 
     /// Classify a model name into an [`SlaTier`].
@@ -215,22 +237,34 @@ impl SlaTierTracker {
         let grand_total: f64 = self.accum.values().map(|a| a.total_cost).sum();
         let grand_count: u64 = self.accum.values().map(|a| a.count).sum();
 
-        let tier_order = [SlaTier::Premium, SlaTier::Standard, SlaTier::Economy, SlaTier::Unknown];
+        let tier_order = [
+            SlaTier::Premium,
+            SlaTier::Standard,
+            SlaTier::Economy,
+            SlaTier::Unknown,
+        ];
         let mut summaries = Vec::new();
         let mut alerts = Vec::new();
 
         for &tier in &tier_order {
             let acc = self.accum.get(&tier).cloned().unwrap_or_default();
-            if acc.count == 0 && grand_count > 0 { continue; }
+            if acc.count == 0 && grand_count > 0 {
+                continue;
+            }
 
             let budget = self.cfg.budgets.get(&tier);
             let daily_budget = budget.and_then(|b| b.daily_usd);
-            let budget_utilisation = daily_budget.map(|b| if b > 0.0 { acc.total_cost / b } else { 0.0 });
+            let budget_utilisation =
+                daily_budget.map(|b| if b > 0.0 { acc.total_cost / b } else { 0.0 });
 
             // Budget alert.
             if let Some(daily) = daily_budget {
                 if acc.total_cost > daily {
-                    let severity = if tier == SlaTier::Premium { "warning" } else { "info" };
+                    let severity = if tier == SlaTier::Premium {
+                        "warning"
+                    } else {
+                        "info"
+                    };
                     alerts.push(SlaAlert {
                         tier,
                         budget_usd: daily,
@@ -245,16 +279,32 @@ impl SlaTierTracker {
                 tier,
                 total_cost_usd: acc.total_cost,
                 request_count: acc.count,
-                avg_cost_usd: if acc.count > 0 { acc.total_cost / acc.count as f64 } else { 0.0 },
-                cost_fraction: if grand_total > 0.0 { acc.total_cost / grand_total } else { 0.0 },
+                avg_cost_usd: if acc.count > 0 {
+                    acc.total_cost / acc.count as f64
+                } else {
+                    0.0
+                },
+                cost_fraction: if grand_total > 0.0 {
+                    acc.total_cost / grand_total
+                } else {
+                    0.0
+                },
                 models: acc.models_seen.clone(),
                 daily_budget_usd: daily_budget,
                 budget_utilisation,
             });
         }
 
-        let premium_cost = self.accum.get(&SlaTier::Premium).map(|a| a.total_cost).unwrap_or(0.0);
-        let premium_fraction = if grand_total > 0.0 { premium_cost / grand_total } else { 0.0 };
+        let premium_cost = self
+            .accum
+            .get(&SlaTier::Premium)
+            .map(|a| a.total_cost)
+            .unwrap_or(0.0);
+        let premium_fraction = if grand_total > 0.0 {
+            premium_cost / grand_total
+        } else {
+            0.0
+        };
 
         SlaReport {
             tiers: summaries,
@@ -267,7 +317,13 @@ impl SlaTierTracker {
 
     /// Set a custom budget for a tier.
     pub fn set_budget(&mut self, tier: SlaTier, daily_usd: Option<f64>, monthly_usd: Option<f64>) {
-        self.cfg.budgets.insert(tier, TierBudget { daily_usd, monthly_usd });
+        self.cfg.budgets.insert(
+            tier,
+            TierBudget {
+                daily_usd,
+                monthly_usd,
+            },
+        );
     }
 
     /// Reset all accumulated data.
@@ -302,7 +358,10 @@ mod tests {
 
     #[test]
     fn unknown_model_is_unknown() {
-        assert_eq!(tracker().classify_model("my-local-llm-7b"), SlaTier::Unknown);
+        assert_eq!(
+            tracker().classify_model("my-local-llm-7b"),
+            SlaTier::Unknown
+        );
     }
 
     #[test]
@@ -312,7 +371,10 @@ mod tests {
 
     #[test]
     fn claude_sonnet_is_standard() {
-        assert_eq!(tracker().classify_model("claude-sonnet-4-6"), SlaTier::Standard);
+        assert_eq!(
+            tracker().classify_model("claude-sonnet-4-6"),
+            SlaTier::Standard
+        );
     }
 
     #[test]
@@ -321,7 +383,11 @@ mod tests {
         t.observe("gpt-4o", 0.10);
         t.observe("gpt-4o", 0.05);
         let report = t.report();
-        let premium = report.tiers.iter().find(|s| s.tier == SlaTier::Premium).unwrap();
+        let premium = report
+            .tiers
+            .iter()
+            .find(|s| s.tier == SlaTier::Premium)
+            .unwrap();
         assert!((premium.total_cost_usd - 0.15).abs() < 1e-9);
         assert_eq!(premium.request_count, 2);
     }
@@ -384,7 +450,11 @@ mod tests {
         t.observe("gpt-4o", 0.01);
         t.observe("gpt-4o", 0.02); // same model, second time
         let report = t.report();
-        let premium = report.tiers.iter().find(|s| s.tier == SlaTier::Premium).unwrap();
+        let premium = report
+            .tiers
+            .iter()
+            .find(|s| s.tier == SlaTier::Premium)
+            .unwrap();
         // Only one unique model.
         assert_eq!(premium.models.len(), 1);
     }
@@ -395,7 +465,11 @@ mod tests {
         t.set_budget(SlaTier::Premium, Some(2.0), None);
         t.observe("gpt-4o", 1.0); // 50% utilisation
         let report = t.report();
-        let prem = report.tiers.iter().find(|s| s.tier == SlaTier::Premium).unwrap();
+        let prem = report
+            .tiers
+            .iter()
+            .find(|s| s.tier == SlaTier::Premium)
+            .unwrap();
         let util = prem.budget_utilisation.unwrap();
         assert!((util - 0.5).abs() < 1e-9);
     }

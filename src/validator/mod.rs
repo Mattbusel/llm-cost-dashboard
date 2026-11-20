@@ -35,7 +35,12 @@ pub struct ValidationResult {
 impl ValidationResult {
     #[cfg_attr(not(feature = "webhooks"), allow(dead_code))]
     fn ok(tier: Option<String>) -> Self {
-        Self { is_valid: true, tier, remaining_quota: None, error_message: None }
+        Self {
+            is_valid: true,
+            tier,
+            remaining_quota: None,
+            error_message: None,
+        }
     }
 
     fn err(msg: impl Into<String>) -> Self {
@@ -64,7 +69,7 @@ impl AnthropicValidator {
     pub async fn validate(&self, key: &str) -> ValidationResult {
         #[cfg(feature = "webhooks")]
         {
-            use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
+            use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
             let client = match reqwest::Client::builder().build() {
                 Ok(c) => c,
                 Err(e) => return ValidationResult::err(format!("HTTP client error: {e}")),
@@ -77,9 +82,16 @@ impl AnthropicValidator {
             headers.insert("x-api-key", key_val);
             headers.insert("anthropic-version", HeaderValue::from_static("2023-06-01"));
             headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-            match client.get("https://api.anthropic.com/v1/models").headers(headers).send().await {
+            match client
+                .get("https://api.anthropic.com/v1/models")
+                .headers(headers)
+                .send()
+                .await
+            {
                 Ok(r) if r.status().is_success() => ValidationResult::ok(Some("anthropic".into())),
-                Ok(r) if r.status().as_u16() == 401 => ValidationResult::err("invalid API key (401)"),
+                Ok(r) if r.status().as_u16() == 401 => {
+                    ValidationResult::err("invalid API key (401)")
+                }
                 Ok(r) if r.status().as_u16() == 403 => ValidationResult::err("forbidden (403)"),
                 Ok(r) => ValidationResult::err(format!("unexpected status {}", r.status())),
                 Err(e) => ValidationResult::err(format!("request failed: {e}")),
@@ -114,7 +126,7 @@ impl OpenAiValidator {
     pub async fn validate(&self, key: &str) -> ValidationResult {
         #[cfg(feature = "webhooks")]
         {
-            use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
+            use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION};
             let client = match reqwest::Client::builder().build() {
                 Ok(c) => c,
                 Err(e) => return ValidationResult::err(format!("HTTP client error: {e}")),
@@ -126,9 +138,16 @@ impl OpenAiValidator {
             };
             let mut headers = HeaderMap::new();
             headers.insert(AUTHORIZATION, auth_val);
-            match client.get("https://api.openai.com/v1/models").headers(headers).send().await {
+            match client
+                .get("https://api.openai.com/v1/models")
+                .headers(headers)
+                .send()
+                .await
+            {
                 Ok(r) if r.status().is_success() => ValidationResult::ok(Some("openai".into())),
-                Ok(r) if r.status().as_u16() == 401 => ValidationResult::err("invalid API key (401)"),
+                Ok(r) if r.status().as_u16() == 401 => {
+                    ValidationResult::err("invalid API key (401)")
+                }
                 Ok(r) if r.status().as_u16() == 403 => ValidationResult::err("forbidden (403)"),
                 Ok(r) => ValidationResult::err(format!("unexpected status {}", r.status())),
                 Err(e) => ValidationResult::err(format!("request failed: {e}")),
@@ -217,7 +236,11 @@ impl MultiValidationResult {
         if self.result.is_valid {
             format!("{}: OK", self.provider)
         } else {
-            let msg = self.result.error_message.as_deref().unwrap_or("unknown error");
+            let msg = self
+                .result
+                .error_message
+                .as_deref()
+                .unwrap_or("unknown error");
             format!("{}: INVALID ({})", self.provider, msg)
         }
     }
@@ -247,7 +270,10 @@ impl MultiValidator {
                 "google" | "gemini" => GoogleValidator::new().validate(&cfg.key).await,
                 other => ValidationResult::err(format!("unknown provider '{other}'")),
             };
-            results.push(MultiValidationResult { provider: cfg.provider.clone(), result });
+            results.push(MultiValidationResult {
+                provider: cfg.provider.clone(),
+                result,
+            });
         }
         results
     }
@@ -300,14 +326,20 @@ mod tests {
 
     #[test]
     fn test_multi_validator_new() {
-        let configs = vec![KeyConfig { provider: "openai".into(), key: "sk-test".into() }];
+        let configs = vec![KeyConfig {
+            provider: "openai".into(),
+            key: "sk-test".into(),
+        }];
         let v = MultiValidator::new(configs);
         assert_eq!(v.configs.len(), 1);
     }
 
     #[tokio::test]
     async fn test_multi_validator_unknown_provider() {
-        let configs = vec![KeyConfig { provider: "unknown".into(), key: "key".into() }];
+        let configs = vec![KeyConfig {
+            provider: "unknown".into(),
+            key: "key".into(),
+        }];
         let v = MultiValidator::new(configs);
         let results = v.validate_all().await;
         assert_eq!(results.len(), 1);

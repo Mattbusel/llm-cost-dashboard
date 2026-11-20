@@ -154,7 +154,10 @@ impl BenchmarkSuite {
         self.stats_cache.clear();
         let mut by_model: HashMap<String, Vec<BenchmarkResult>> = HashMap::new();
         for r in &self.results {
-            by_model.entry(r.model_id.clone()).or_default().push(r.clone());
+            by_model
+                .entry(r.model_id.clone())
+                .or_default()
+                .push(r.clone());
         }
         for (model_id, model_results) in &by_model {
             let stats = ModelStats::from_results(model_id, model_results);
@@ -238,8 +241,9 @@ mod tests {
 
     #[test]
     fn model_stats_percentiles() {
-        let results: Vec<BenchmarkResult> =
-            (1..=10).map(|i| make_result("m", i as f64 * 10.0, 0.01, 0.9)).collect();
+        let results: Vec<BenchmarkResult> = (1..=10)
+            .map(|i| make_result("m", i as f64 * 10.0, 0.01, 0.9))
+            .collect();
         let stats = ModelStats::from_results("m", &results);
         assert_eq!(stats.p50_latency, 50.0);
         assert_eq!(stats.p95_latency, 100.0);

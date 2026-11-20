@@ -426,7 +426,10 @@ mod tests {
     fn remaining_counts_decrease() {
         let e = QuotaEnforcer::new(small_config());
         let r1 = e.check_and_record("a:m", 100, 0.01);
-        if let QuotaResult::Allowed { remaining_requests, .. } = r1 {
+        if let QuotaResult::Allowed {
+            remaining_requests, ..
+        } = r1
+        {
             // 3 total (no burst), first used = 2 remaining
             assert_eq!(remaining_requests, 2);
         } else {

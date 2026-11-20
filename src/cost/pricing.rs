@@ -169,9 +169,9 @@ pub const PRICING: &[(&str, f64, f64)] = &[
     ("meta-llama/llama-3.3-70b-instruct-turbo", 0.88, 0.88),
     ("meta-llama/llama-3.2-90b-vision-instruct-turbo", 1.20, 1.20),
     ("meta-llama/llama-3.2-11b-vision-instruct-turbo", 0.18, 0.18),
-    ("llama-3.3-70b-versatile", 0.59, 0.79),    // Groq
-    ("llama-3.1-70b-versatile", 0.59, 0.79),    // Groq
-    ("llama-3.1-8b-instant", 0.05, 0.08),        // Groq
+    ("llama-3.3-70b-versatile", 0.59, 0.79), // Groq
+    ("llama-3.1-70b-versatile", 0.59, 0.79), // Groq
+    ("llama-3.1-8b-instant", 0.05, 0.08),    // Groq
     // ── xAI Grok ─────────────────────────────────────────────────────────────
     ("grok-3", 3.00, 15.00),
     ("grok-3-mini", 0.30, 0.50),
@@ -277,7 +277,8 @@ impl ModelPrice {
 
     /// 1-hour cache-write rate, defaulting to 200% of input (Anthropic's rate).
     pub fn cache_write_1h_rate(&self) -> f64 {
-        self.cache_write_1h_per_1m.unwrap_or(self.input_per_1m * 2.0)
+        self.cache_write_1h_per_1m
+            .unwrap_or(self.input_per_1m * 2.0)
     }
 
     /// The rates of one `llm-prices` row, or of its long-context tier when
@@ -285,10 +286,22 @@ impl ModelPrice {
     /// price. A row without an output price (embedding models) gets 0.
     fn from_table(p: &llm_prices::Price, long: bool) -> Option<Self> {
         let (input, output, read, writes, bi, bo) = match p.long_context {
-            Some(lc) if long => {
-                (lc.input, lc.output, lc.cache_read, lc.cache_write, lc.batch_input, lc.batch_output)
-            }
-            _ => (p.input, p.output, p.cache_read, p.cache_write, p.batch_input, p.batch_output),
+            Some(lc) if long => (
+                lc.input,
+                lc.output,
+                lc.cache_read,
+                lc.cache_write,
+                lc.batch_input,
+                lc.batch_output,
+            ),
+            _ => (
+                p.input,
+                p.output,
+                p.cache_read,
+                p.cache_write,
+                p.batch_input,
+                p.batch_output,
+            ),
         };
         let input = input?;
         let write = |ttl: &str| writes.iter().find(|(k, _)| *k == ttl).map(|(_, v)| *v);
@@ -491,7 +504,9 @@ pub fn cost_usage_bucket(model: &str, usage: &Usage, requests: u64) -> UsageCost
     let avg_prompt = usage.prompt_tokens().div_ceil(requests);
     match resolve(model) {
         Some(Found::Table(p)) => {
-            let long = p.long_context.is_some_and(|lc| avg_prompt > lc.threshold_tokens);
+            let long = p
+                .long_context
+                .is_some_and(|lc| avg_prompt > lc.threshold_tokens);
             let full = cost_usage(model, usage);
             if full.long_context == long {
                 return full;
@@ -504,9 +519,11 @@ pub fn cost_usage_bucket(model: &str, usage: &Usage, requests: u64) -> UsageCost
                 None => full,
             }
         }
-        Some(Found::Custom(p, PriceSource::BuiltIn)) => {
-            rates_cost(builtin_for_prompt(model, p, avg_prompt), usage, PriceSource::BuiltIn)
-        }
+        Some(Found::Custom(p, PriceSource::BuiltIn)) => rates_cost(
+            builtin_for_prompt(model, p, avg_prompt),
+            usage,
+            PriceSource::BuiltIn,
+        ),
         _ => cost_usage(model, usage),
     }
 }
@@ -551,7 +568,11 @@ fn rates_cost(price: ModelPrice, usage: &Usage, source: PriceSource) -> UsageCos
     };
     let (in_rate, out_rate, discount) = match batch {
         Some((bi, bo)) => {
-            let d = if price.input_per_1m > 0.0 { bi / price.input_per_1m } else { 1.0 };
+            let d = if price.input_per_1m > 0.0 {
+                bi / price.input_per_1m
+            } else {
+                1.0
+            };
             (bi, bo, d)
         }
         None => (price.input_per_1m, price.output_per_1m, 1.0),
@@ -616,7 +637,8 @@ pub const CACHE_READ_RATES: &[(&str, f64)] = &[
 /// including cache reads and writes, and cache rates scale from the higher
 /// input rate. Claude Haiku 5.5 pays $0.50 / $2.50 for prompts over 100,000
 /// tokens (Anthropic pricing page, long context pricing).
-pub const LONG_PROMPT_RATES: &[(&str, u64, f64, f64)] = &[("claude-haiku-5-5", 100_000, 0.50, 2.50)];
+pub const LONG_PROMPT_RATES: &[(&str, u64, f64, f64)] =
+    &[("claude-haiku-5-5", 100_000, 0.50, 2.50)];
 
 /// The price for one request of `model` whose prompt (input plus cache
 /// read and write tokens) is `prompt_tokens` long. Same as [`price_of`],
@@ -638,7 +660,9 @@ pub fn price_for_prompt(model: &str, prompt_tokens: u64) -> Option<ModelPrice> {
         Found::Custom(p, PriceSource::BuiltIn) => Some(builtin_for_prompt(model, p, prompt_tokens)),
         Found::Custom(p, _) => Some(p),
         Found::Table(p) => {
-            let long = p.long_context.is_some_and(|lc| prompt_tokens > lc.threshold_tokens);
+            let long = p
+                .long_context
+                .is_some_and(|lc| prompt_tokens > lc.threshold_tokens);
             ModelPrice::from_table(p, long).or_else(|| ModelPrice::from_table(p, false))
         }
     }
@@ -852,7 +876,10 @@ mod tests {
         // Default: 10% of input.
         assert!((price_of("claude-sonnet-4-6").unwrap().cache_read_rate() - 0.30).abs() < 1e-12);
         for (m, _) in CACHE_READ_RATES {
-            assert!(lookup_known(m).is_some(), "{m} has a cache rate but no price");
+            assert!(
+                lookup_known(m).is_some(),
+                "{m} has a cache rate but no price"
+            );
         }
     }
 
@@ -891,11 +918,31 @@ mod tests {
         let close = |a: f64, b: f64| (a - b).abs() < 1e-9;
         for &(id, input, w5m, w1h, read, output) in ANTHROPIC_PAGE_2026_10_17 {
             let p = price_of(id).unwrap_or_else(|| panic!("{id} is missing from PRICING"));
-            assert!(close(p.input_per_1m, input), "{id} input {} != {input}", p.input_per_1m);
-            assert!(close(p.output_per_1m, output), "{id} output {} != {output}", p.output_per_1m);
-            assert!(close(p.cache_write_rate(), w5m), "{id} 5m write {} != {w5m}", p.cache_write_rate());
-            assert!(close(p.cache_write_1h_rate(), w1h), "{id} 1h write {} != {w1h}", p.cache_write_1h_rate());
-            assert!(close(p.cache_read_rate(), read), "{id} cache read {} != {read}", p.cache_read_rate());
+            assert!(
+                close(p.input_per_1m, input),
+                "{id} input {} != {input}",
+                p.input_per_1m
+            );
+            assert!(
+                close(p.output_per_1m, output),
+                "{id} output {} != {output}",
+                p.output_per_1m
+            );
+            assert!(
+                close(p.cache_write_rate(), w5m),
+                "{id} 5m write {} != {w5m}",
+                p.cache_write_rate()
+            );
+            assert!(
+                close(p.cache_write_1h_rate(), w1h),
+                "{id} 1h write {} != {w1h}",
+                p.cache_write_1h_rate()
+            );
+            assert!(
+                close(p.cache_read_rate(), read),
+                "{id} cache read {} != {read}",
+                p.cache_read_rate()
+            );
         }
         // Haiku 5.5, prompts over 100,000 tokens (same page, same date):
         // $0.50 input, $0.625 5m write, $1 1h write, $0.05 cache hit, $2.50 output.
@@ -914,7 +961,10 @@ mod tests {
 
     #[test]
     fn test_dated_ids_fall_back_to_undated_entry() {
-        assert_eq!(lookup_known("claude-sonnet-4-5-20250929"), Some((3.0, 15.0)));
+        assert_eq!(
+            lookup_known("claude-sonnet-4-5-20250929"),
+            Some((3.0, 15.0))
+        );
         assert_eq!(lookup_known("gpt-4o-2024-08-06"), Some((2.5, 10.0)));
         assert_eq!(lookup_known("unknown-model-20250101"), None);
         assert_eq!(undated("gpt-4o"), None);
@@ -945,29 +995,59 @@ mod tests {
     #[test]
     fn test_overrides_win_over_llm_prices_even_undated() {
         // llm-prices resolves this id (prefix stripped)...
-        assert_eq!(price_source("eu.anthropic.claude-opus-4-20250514"), PriceSource::LlmPrices);
+        assert_eq!(
+            price_source("eu.anthropic.claude-opus-4-20250514"),
+            PriceSource::LlmPrices
+        );
         // ...but an override of its undated form wins, as before 1.4.0.
         // (An id no other test prices, since overrides are process-wide.)
         set_price("eu.anthropic.claude-opus-4", ModelPrice::new(1.0, 2.0));
-        assert_eq!(price_source("eu.anthropic.claude-opus-4-20250514"), PriceSource::Override);
-        assert_eq!(lookup_known("eu.anthropic.claude-opus-4-20250514"), Some((1.0, 2.0)));
-        assert_eq!(price_source("claude-opus-4-20250514"), PriceSource::LlmPrices);
+        assert_eq!(
+            price_source("eu.anthropic.claude-opus-4-20250514"),
+            PriceSource::Override
+        );
+        assert_eq!(
+            lookup_known("eu.anthropic.claude-opus-4-20250514"),
+            Some((1.0, 2.0))
+        );
+        assert_eq!(
+            price_source("claude-opus-4-20250514"),
+            PriceSource::LlmPrices
+        );
     }
 
     #[test]
     fn test_llm_prices_ids_and_rates() {
         // Bedrock ids and provider prefixes resolve through llm-prices.
-        assert_eq!(lookup_known("us.anthropic.claude-sonnet-4-20250514-v1:0"), Some((3.0, 15.0)));
+        assert_eq!(
+            lookup_known("us.anthropic.claude-sonnet-4-20250514-v1:0"),
+            Some((3.0, 15.0))
+        );
         assert_eq!(lookup_known("models/gemini-2.5-pro"), Some((1.25, 10.0)));
         let p = price_of("claude-opus-5-5").unwrap();
         assert_eq!(p.cache_write_per_1m, Some(5.0));
         assert_eq!(p.cache_write_1h_per_1m, Some(8.0));
-        assert_eq!((p.batch_input_per_1m, p.batch_output_per_1m), (Some(2.0), Some(10.0)));
+        assert_eq!(
+            (p.batch_input_per_1m, p.batch_output_per_1m),
+            (Some(2.0), Some(10.0))
+        );
         // Gemini 2.5 Pro long-context tier (over 200,000 prompt tokens).
-        assert_eq!(price_for_prompt("gemini-2.5-pro", 200_001).map(|p| p.input_per_1m), Some(2.5));
-        assert_eq!(price_for_prompt("gemini-2.5-pro", 200_000).map(|p| p.input_per_1m), Some(1.25));
+        assert_eq!(
+            price_for_prompt("gemini-2.5-pro", 200_001).map(|p| p.input_per_1m),
+            Some(2.5)
+        );
+        assert_eq!(
+            price_for_prompt("gemini-2.5-pro", 200_000).map(|p| p.input_per_1m),
+            Some(1.25)
+        );
         // Embedding rows have no output price: priced as input only.
-        let e = cost_usage("text-embedding-3-small", &Usage { input: 1_000_000, ..Usage::default() });
+        let e = cost_usage(
+            "text-embedding-3-small",
+            &Usage {
+                input: 1_000_000,
+                ..Usage::default()
+            },
+        );
         assert!((e.total - 0.02).abs() < 1e-12);
         assert_eq!(e.source, PriceSource::LlmPrices);
     }
@@ -978,7 +1058,13 @@ mod tests {
             "input_cost_per_token_batches": 1e-06, "output_cost_per_token_batches": 4e-06,
             "cache_creation_input_token_cost_above_1hr": 5e-06}}"#;
         assert_eq!(load_prices_json(json).unwrap(), 1);
-        let u = Usage { input: 1_000_000, output: 1_000_000, cache_write_1h: 1_000_000, batch: true, ..Usage::default() };
+        let u = Usage {
+            input: 1_000_000,
+            output: 1_000_000,
+            cache_write_1h: 1_000_000,
+            batch: true,
+            ..Usage::default()
+        };
         let c = cost_usage("zz-test-batch-model", &u);
         assert!(c.batch_priced);
         // $1 + $4, and the 1h write ($5) at the batch discount (50%).

@@ -216,7 +216,11 @@ impl WebhookPayload {
         static COUNTER: std::sync::atomic::AtomicU64 =
             std::sync::atomic::AtomicU64::new(0xcafe_babe_dead_beef);
         let seq = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let delivery_id = format!("{:016x}{:016x}", ts ^ seq, seq.wrapping_mul(0x517cc1b727220a95));
+        let delivery_id = format!(
+            "{:016x}{:016x}",
+            ts ^ seq,
+            seq.wrapping_mul(0x517cc1b727220a95)
+        );
         Self {
             event_type: event_type.into(),
             timestamp: ts,
@@ -350,8 +354,7 @@ impl WebhookDispatcher {
                             break;
                         }
                         Ok(status) => {
-                            delivery.last_error =
-                                Some(format!("HTTP {status}"));
+                            delivery.last_error = Some(format!("HTTP {status}"));
                         }
                         Err(e) => {
                             delivery.last_error = Some(e);
@@ -521,7 +524,9 @@ mod tests {
         let client = Arc::new(MockHttpClient::always(200));
         let dispatcher = WebhookDispatcher::new(config, client.clone());
         let payload = WebhookPayload::new("test.event", serde_json::json!({"k": "v"}));
-        let delivery = dispatcher.deliver_with_retry(payload, client.as_ref()).await;
+        let delivery = dispatcher
+            .deliver_with_retry(payload, client.as_ref())
+            .await;
         assert!(delivery.delivered);
         assert_eq!(delivery.attempts, 1);
         assert!(delivery.last_error.is_none());
@@ -540,7 +545,9 @@ mod tests {
         let client = Arc::new(MockHttpClient::sequence([500, 500, 200], 200));
         let dispatcher = WebhookDispatcher::new(config, client.clone());
         let payload = WebhookPayload::new("retry.event", serde_json::json!(null));
-        let delivery = dispatcher.deliver_with_retry(payload, client.as_ref()).await;
+        let delivery = dispatcher
+            .deliver_with_retry(payload, client.as_ref())
+            .await;
         assert!(delivery.delivered);
         assert_eq!(delivery.attempts, 3);
     }
@@ -557,7 +564,9 @@ mod tests {
         let client = Arc::new(MockHttpClient::always(500));
         let dispatcher = WebhookDispatcher::new(config, client.clone());
         let payload = WebhookPayload::new("fail.event", serde_json::json!(null));
-        let delivery = dispatcher.deliver_with_retry(payload, client.as_ref()).await;
+        let delivery = dispatcher
+            .deliver_with_retry(payload, client.as_ref())
+            .await;
         assert!(!delivery.delivered);
         // max_retries=2 means attempts 0,1,2 → 3 total.
         assert_eq!(delivery.attempts, 3);

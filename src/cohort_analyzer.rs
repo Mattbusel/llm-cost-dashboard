@@ -138,10 +138,7 @@ impl CohortAnalyzer {
         let mut cohorts: HashMap<u64, HashSet<String>> = HashMap::new();
         for (user_id, ts) in &first_seen {
             let bucket = period_bucket(*ts, period);
-            cohorts
-                .entry(bucket)
-                .or_default()
-                .insert(user_id.clone());
+            cohorts.entry(bucket).or_default().insert(user_id.clone());
         }
 
         let mut result: Vec<CohortGroup> = cohorts
@@ -167,11 +164,7 @@ impl CohortAnalyzer {
     /// Build a retention matrix: for each cohort, what fraction of its users
     /// were active in each of `num_periods` consecutive period buckets starting
     /// from the cohort's own bucket?
-    pub fn retention_matrix(
-        &self,
-        cohorts: &[CohortGroup],
-        num_periods: usize,
-    ) -> RetentionMatrix {
+    pub fn retention_matrix(&self, cohorts: &[CohortGroup], num_periods: usize) -> RetentionMatrix {
         let events = match self.events.lock() {
             Ok(g) => g,
             Err(_) => {
@@ -260,8 +253,7 @@ impl CohortAnalyzer {
             return 0.0;
         }
 
-        let user_events: Vec<&UserEvent> =
-            events.iter().filter(|e| e.user_id == user_id).collect();
+        let user_events: Vec<&UserEvent> = events.iter().filter(|e| e.user_id == user_id).collect();
         if user_events.is_empty() {
             return 0.0;
         }
@@ -269,8 +261,16 @@ impl CohortAnalyzer {
         let total_cost: f64 = user_events.iter().map(|e| e.cost_usd).sum();
 
         // Determine span in months.
-        let min_ts = user_events.iter().map(|e| e.timestamp_unix).min().unwrap_or(0);
-        let max_ts = user_events.iter().map(|e| e.timestamp_unix).max().unwrap_or(0);
+        let min_ts = user_events
+            .iter()
+            .map(|e| e.timestamp_unix)
+            .min()
+            .unwrap_or(0);
+        let max_ts = user_events
+            .iter()
+            .map(|e| e.timestamp_unix)
+            .max()
+            .unwrap_or(0);
         let span_months = ((max_ts - min_ts) as f64 / (30.0 * SECS_PER_DAY as f64)).max(1.0);
         let avg_monthly = total_cost / span_months;
 
@@ -373,10 +373,7 @@ impl CohortAnalyzer {
     /// Return the top `top_n` cohorts ranked by LTV estimate.
     pub fn best_cohorts(&self, period: CohortPeriod, top_n: usize) -> Vec<CohortStats> {
         let cohorts = self.assign_cohorts(period);
-        let mut stats: Vec<CohortStats> = cohorts
-            .iter()
-            .map(|c| self.cohort_stats(c))
-            .collect();
+        let mut stats: Vec<CohortStats> = cohorts.iter().map(|c| self.cohort_stats(c)).collect();
         stats.sort_by(|a, b| {
             b.ltv_estimate
                 .partial_cmp(&a.ltv_estimate)

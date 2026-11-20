@@ -38,7 +38,9 @@ fn prices_agree_with_llm_cost_cap() {
             continue;
         }
         if (i - input).abs() >= 1e-9 || (o - output).abs() >= 1e-9 {
-            mismatches.push(format!("{model}: this crate {i}/{o}, llm-cost-cap {input}/{output}"));
+            mismatches.push(format!(
+                "{model}: this crate {i}/{o}, llm-cost-cap {input}/{output}"
+            ));
         }
         compared += 1;
     }

@@ -34,8 +34,8 @@ impl BudgetPeriod {
         match self {
             BudgetPeriod::Daily => 86_400.0,
             BudgetPeriod::Weekly => 604_800.0,
-            BudgetPeriod::Monthly => 2_592_000.0,   // 30 days
-            BudgetPeriod::Yearly => 31_536_000.0,   // 365 days
+            BudgetPeriod::Monthly => 2_592_000.0, // 30 days
+            BudgetPeriod::Yearly => 31_536_000.0, // 365 days
         }
     }
 }
@@ -60,7 +60,12 @@ pub struct BudgetLimit {
 impl BudgetLimit {
     /// Create a new limit.
     pub fn new(soft_usd: f64, hard_usd: f64, period: BudgetPeriod) -> Self {
-        Self { soft_usd, hard_usd, period, rollover: false }
+        Self {
+            soft_usd,
+            hard_usd,
+            period,
+            rollover: false,
+        }
     }
 
     /// Enable budget rollover.
@@ -180,9 +185,9 @@ impl BudgetController {
         self.limits.insert(entity.to_string(), limit);
         // Initialise a pace tracker if none exists.
         if let Ok(mut trackers) = self.pace_trackers.write() {
-            trackers.entry(entity.to_string()).or_insert_with(|| {
-                SpendingPace::new(budget)
-            });
+            trackers
+                .entry(entity.to_string())
+                .or_insert_with(|| SpendingPace::new(budget));
         }
         let _ = period; // used indirectly via limits
     }
@@ -194,7 +199,9 @@ impl BudgetController {
             Some(l) => l,
             None => {
                 // No limit configured → allow.
-                return BudgetDecision::Allow { remaining_usd: f64::INFINITY };
+                return BudgetDecision::Allow {
+                    remaining_usd: f64::INFINITY,
+                };
             }
         };
 

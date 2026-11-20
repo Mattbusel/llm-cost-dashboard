@@ -193,7 +193,12 @@ impl ExplorerState {
 ///
 /// `records` is the complete set of cost records from the ledger.
 /// `state` holds the current filter/sort/selection.
-pub fn render_explorer(frame: &mut Frame, area: Rect, records: &[CostRecord], state: &ExplorerState) {
+pub fn render_explorer(
+    frame: &mut Frame,
+    area: Rect,
+    records: &[CostRecord],
+    state: &ExplorerState,
+) {
     let filtered = state.apply(records);
     let total_filtered = filtered.len();
 
@@ -233,7 +238,10 @@ fn render_explorer_help(frame: &mut Frame, area: Rect, state: &ExplorerState, to
         format!("model~\"{}\"", state.filter.model_contains)
     };
     let line1 = Line::from(vec![
-        Span::styled(" [x: exit explorer | s: cycle sort | Enter: detail | j/k: scroll]  ", Theme::dim()),
+        Span::styled(
+            " [x: exit explorer | s: cycle sort | Enter: detail | j/k: scroll]  ",
+            Theme::dim(),
+        ),
         Span::styled(format!("Filter: {filter_str}  "), Theme::warn()),
         Span::styled(format!("Sort: {}  ", state.sort.label()), Theme::header()),
         Span::styled(format!("Showing {total} records"), Theme::normal()),
@@ -317,7 +325,10 @@ fn render_explorer_table(
 
 fn render_detail_pane(frame: &mut Frame, area: Rect, record: Option<&CostRecord>) {
     let lines: Vec<Line> = match record {
-        None => vec![Line::from(Span::styled("No record selected.", Theme::dim()))],
+        None => vec![Line::from(Span::styled(
+            "No record selected.",
+            Theme::dim(),
+        ))],
         Some(r) => vec![
             Line::from(vec![
                 Span::styled("ID:        ", Theme::dim()),

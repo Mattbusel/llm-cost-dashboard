@@ -135,18 +135,32 @@ mod tests {
     #[test]
     fn reader_counts_and_cache_pricing() {
         let text = concat!(
-            r#"{"model":"claude-haiku-4-5","input_tokens":1000000,"output_tokens":0}"#, "\n",
+            r#"{"model":"claude-haiku-4-5","input_tokens":1000000,"output_tokens":0}"#,
+            "\n",
             "\n",
             "not json\n",
-            r#"{"sessionId":"s","requestId":"r","message":{"id":"m","model":"claude-haiku-4-5","usage":{"input_tokens":0,"output_tokens":0,"cache_read_input_tokens":1000000,"cache_creation_input_tokens":1000000,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":1000000}}}}"#, "\n",
-            r#"{"sessionId":"s","requestId":"r","message":{"id":"m","model":"claude-haiku-4-5","usage":{"input_tokens":0,"output_tokens":0}}}"#, "\n",
+            r#"{"sessionId":"s","requestId":"r","message":{"id":"m","model":"claude-haiku-4-5","usage":{"input_tokens":0,"output_tokens":0,"cache_read_input_tokens":1000000,"cache_creation_input_tokens":1000000,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":1000000}}}}"#,
+            "\n",
+            r#"{"sessionId":"s","requestId":"r","message":{"id":"m","model":"claude-haiku-4-5","usage":{"input_tokens":0,"output_tokens":0}}}"#,
+            "\n",
         );
         let mut ing = Ingester::new();
         let stats = ing.ingest_reader(text.as_bytes()).unwrap();
-        assert_eq!(stats, IngestStats { recorded: 2, skipped: 1, rejected: 1 });
+        assert_eq!(
+            stats,
+            IngestStats {
+                recorded: 2,
+                skipped: 1,
+                rejected: 1
+            }
+        );
         let recs = ing.ledger().records();
         assert!((recs[0].total_cost_usd - 1.0).abs() < 1e-9);
         // 1M cache reads at $0.10 plus 1M one-hour cache writes at $2.00.
-        assert!((recs[1].total_cost_usd - 2.10).abs() < 1e-9, "{}", recs[1].total_cost_usd);
+        assert!(
+            (recs[1].total_cost_usd - 2.10).abs() < 1e-9,
+            "{}",
+            recs[1].total_cost_usd
+        );
     }
 }

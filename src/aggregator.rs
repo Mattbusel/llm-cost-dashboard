@@ -277,12 +277,9 @@ impl CostAggregator {
         to_ts: u64,
     ) -> Option<f64> {
         let buckets = self.query(granularity, from_ts, to_ts, Some(model), None);
-        let (total_tokens, total_cost) =
-            buckets
-                .iter()
-                .fold((0u64, 0.0f64), |(tok, cost), b| {
-                    (tok + b.tokens_in + b.tokens_out, cost + b.cost)
-                });
+        let (total_tokens, total_cost) = buckets.iter().fold((0u64, 0.0f64), |(tok, cost), b| {
+            (tok + b.tokens_in + b.tokens_out, cost + b.cost)
+        });
         if total_tokens == 0 {
             return None;
         }
@@ -478,7 +475,9 @@ mod tests {
         agg.record(BASE_TS, "m", "t", 1, 1, 0.01);
         agg.record(BASE_TS + 3_600, "m", "t", 1, 1, 0.01);
         let buckets = agg.query(BucketGranularity::Hour, 0, u64::MAX, None, None);
-        assert!(buckets.windows(2).all(|w| w[0].period_start <= w[1].period_start));
+        assert!(buckets
+            .windows(2)
+            .all(|w| w[0].period_start <= w[1].period_start));
     }
 
     #[test]

@@ -64,7 +64,9 @@ pub struct BenchmarkTracker {
 
 impl BenchmarkTracker {
     /// Create an empty tracker.
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     /// Add a benchmark score.
     pub fn add_score(&mut self, score: BenchmarkScore) {
@@ -73,14 +75,17 @@ impl BenchmarkTracker {
 
     /// Return the most recent score for a (model, suite) pair.
     pub fn latest_score(&self, model_id: &str, suite: &BenchmarkSuite) -> Option<&BenchmarkScore> {
-        self.scores.iter()
+        self.scores
+            .iter()
             .filter(|s| s.model_id == model_id && &s.suite == suite)
             .max_by_key(|s| s.date)
     }
 
     /// Return all scores for a (model, suite) pair, sorted ascending by date.
     pub fn score_history(&self, model_id: &str, suite: &BenchmarkSuite) -> Vec<&BenchmarkScore> {
-        let mut history: Vec<&BenchmarkScore> = self.scores.iter()
+        let mut history: Vec<&BenchmarkScore> = self
+            .scores
+            .iter()
             .filter(|s| s.model_id == model_id && &s.suite == suite)
             .collect();
         history.sort_by_key(|s| s.date);
@@ -110,7 +115,9 @@ impl BenchmarkTracker {
     /// points.
     pub fn score_trend(&self, model_id: &str, suite: &BenchmarkSuite) -> Option<f64> {
         let history = self.score_history(model_id, suite);
-        if history.len() < 2 { return None; }
+        if history.len() < 2 {
+            return None;
+        }
 
         let n = history.len() as f64;
         let xs: Vec<f64> = history.iter().map(|s| s.date as f64).collect();
@@ -119,10 +126,16 @@ impl BenchmarkTracker {
         let x_mean = xs.iter().sum::<f64>() / n;
         let y_mean = ys.iter().sum::<f64>() / n;
 
-        let numerator: f64 = xs.iter().zip(ys.iter()).map(|(x, y)| (x - x_mean) * (y - y_mean)).sum();
+        let numerator: f64 = xs
+            .iter()
+            .zip(ys.iter())
+            .map(|(x, y)| (x - x_mean) * (y - y_mean))
+            .sum();
         let denominator: f64 = xs.iter().map(|x| (x - x_mean).powi(2)).sum();
 
-        if denominator.abs() < f64::EPSILON { return Some(0.0); }
+        if denominator.abs() < f64::EPSILON {
+            return Some(0.0);
+        }
         Some(numerator / denominator)
     }
 
@@ -151,12 +164,16 @@ impl BenchmarkTracker {
         let mut best: HashMap<String, (String, f64)> = HashMap::new();
         for score in &self.scores {
             let suite_name = score.suite.name();
-            let entry = best.entry(suite_name).or_insert_with(|| (score.model_id.clone(), f64::NEG_INFINITY));
+            let entry = best
+                .entry(suite_name)
+                .or_insert_with(|| (score.model_id.clone(), f64::NEG_INFINITY));
             if score.score > entry.1 {
                 *entry = (score.model_id.clone(), score.score);
             }
         }
-        best.into_iter().map(|(suite, (model, _))| (suite, model)).collect()
+        best.into_iter()
+            .map(|(suite, (model, _))| (suite, model))
+            .collect()
     }
 
     /// Cost-adjusted efficiency metric: `score / (cost_per_1k * 100)`.
@@ -170,7 +187,9 @@ impl BenchmarkTracker {
         cost_per_1k: f64,
     ) -> Option<f64> {
         let score = self.latest_score(model_id, suite)?.score;
-        if cost_per_1k <= 0.0 { return None; }
+        if cost_per_1k <= 0.0 {
+            return None;
+        }
         Some(score / (cost_per_1k * 100.0))
     }
 
@@ -207,7 +226,9 @@ impl BenchmarkTracker {
     fn suites_for_model(&self, model_id: &str) -> HashMap<String, f64> {
         let mut map: HashMap<String, f64> = HashMap::new();
         // Collect all suites that model has scores for, then take latest.
-        let suites: Vec<String> = self.scores.iter()
+        let suites: Vec<String> = self
+            .scores
+            .iter()
             .filter(|s| s.model_id == model_id)
             .map(|s| s.suite.name())
             .collect::<std::collections::HashSet<_>>()
@@ -278,9 +299,14 @@ mod tests {
         tracker.add_score(make_score("model-a", BenchmarkSuite::HumanEval, 70.0, 200));
         tracker.add_score(make_score("model-a", BenchmarkSuite::HumanEval, 80.0, 300));
 
-        let trend = tracker.score_trend("model-a", &BenchmarkSuite::HumanEval).unwrap();
+        let trend = tracker
+            .score_trend("model-a", &BenchmarkSuite::HumanEval)
+            .unwrap();
         // OLS slope should be 0.1 (10 point increase per 100 time units).
-        assert!((trend - 0.1).abs() < 0.001, "expected slope ~0.1, got {trend}");
+        assert!(
+            (trend - 0.1).abs() < 0.001,
+            "expected slope ~0.1, got {trend}"
+        );
         assert!(trend > 0.0, "improving model should have positive trend");
     }
 
@@ -288,7 +314,9 @@ mod tests {
     fn trend_none_with_single_sample() {
         let mut tracker = BenchmarkTracker::new();
         tracker.add_score(make_score("model-a", BenchmarkSuite::GSM8K, 75.0, 1000));
-        assert!(tracker.score_trend("model-a", &BenchmarkSuite::GSM8K).is_none());
+        assert!(tracker
+            .score_trend("model-a", &BenchmarkSuite::GSM8K)
+            .is_none());
     }
 
     #[test]
@@ -303,7 +331,12 @@ mod tests {
 
         let comparison = tracker.compare_models("gpt-4", "claude-3");
         // Should find MMLU and GSM8K (2 common suites), not HumanEval.
-        assert_eq!(comparison.len(), 2, "expected 2 common suites, got {}", comparison.len());
+        assert_eq!(
+            comparison.len(),
+            2,
+            "expected 2 common suites, got {}",
+            comparison.len()
+        );
         let suite_names: Vec<String> = comparison.iter().map(|(s, _, _)| s.name()).collect();
         assert!(suite_names.contains(&"MMLU".to_string()));
         assert!(suite_names.contains(&"GSM8K".to_string()));
@@ -330,8 +363,13 @@ mod tests {
         tracker.add_score(make_score("model-x", BenchmarkSuite::ARC, 75.0, 300));
         tracker.add_score(make_score("model-x", BenchmarkSuite::ARC, 65.0, 200));
 
-        let latest = tracker.latest_score("model-x", &BenchmarkSuite::ARC).unwrap();
-        assert!((latest.score - 75.0).abs() < 0.001, "latest should be the score at t=300");
+        let latest = tracker
+            .latest_score("model-x", &BenchmarkSuite::ARC)
+            .unwrap();
+        assert!(
+            (latest.score - 75.0).abs() < 0.001,
+            "latest should be the score at t=300"
+        );
     }
 
     #[test]
@@ -340,7 +378,9 @@ mod tests {
         tracker.add_score(make_score("model-a", BenchmarkSuite::MMLU, 80.0, 1000));
 
         // score / (cost * 100) = 80 / (0.02 * 100) = 80 / 2 = 40.
-        let adj = tracker.cost_adjusted_score("model-a", &BenchmarkSuite::MMLU, 0.02).unwrap();
+        let adj = tracker
+            .cost_adjusted_score("model-a", &BenchmarkSuite::MMLU, 0.02)
+            .unwrap();
         assert!((adj - 40.0).abs() < 0.001, "expected 40.0, got {adj}");
     }
 
@@ -353,7 +393,10 @@ mod tests {
         let table = tracker.to_markdown_table(&BenchmarkSuite::HellaSwag);
         assert!(table.contains("alpha"), "table should contain 'alpha'");
         assert!(table.contains("beta"), "table should contain 'beta'");
-        assert!(table.contains("| Model |"), "table should have Model column");
+        assert!(
+            table.contains("| Model |"),
+            "table should have Model column"
+        );
         assert!(table.contains("92.0"), "table should contain beta's score");
     }
 

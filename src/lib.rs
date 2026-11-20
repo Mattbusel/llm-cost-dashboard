@@ -52,8 +52,11 @@ pub mod anomaly;
 #[cfg_attr(docsrs, doc(cfg(feature = "server")))]
 pub mod api;
 pub mod budget;
+pub mod carbon;
+pub mod clustering;
 pub mod comparison;
 pub mod cost;
+pub mod diff;
 pub mod error;
 pub mod export;
 pub mod forecast;
@@ -61,31 +64,38 @@ pub mod import;
 pub mod ingest;
 pub mod interop;
 pub mod log;
+pub mod model_compare;
 pub mod org;
+pub mod prediction;
+pub mod quota;
 pub mod recommendations;
+pub mod replay;
 pub mod scheduler;
 pub mod session;
+pub mod sla;
 pub mod tagging;
-pub mod tail;
 pub mod tags;
+pub mod tail;
+pub mod tenant;
 pub mod trace;
+pub mod trend;
 pub mod trends;
 #[cfg(feature = "tui")]
 #[cfg_attr(docsrs, doc(cfg(feature = "tui")))]
 pub mod ui;
 pub mod validator;
 pub mod webhook;
-pub mod clustering;
-pub mod sla;
-pub mod carbon;
-pub mod tenant;
-pub mod prediction;
-pub mod diff;
-pub mod model_compare;
-pub mod trend;
-pub mod quota;
-pub mod replay;
 
+pub use alerts::{Alert, AlertChannel, AlertEngine, AlertRule, AlertSummary, AlertWindow};
+pub use allocation::{
+    teams_tab_rows, AllocationBucket, AllocationLedger, AllocationReport, AllocationRule,
+    AllocationTag, BudgetHierarchy, CostAllocation, CostAllocator, Environment, ProjectBudget,
+    TeamBudget, TeamUsage,
+};
+pub use anomaly::{AnomalyConfig, AnomalyDetector, AnomalyReport, AnomalyResult};
+pub use budget::planner::{
+    AllocationStatus, BudgetAllocation, BudgetForecast, BudgetPeriod, BudgetPlan, BudgetPlanner,
+};
 pub use budget::{
     BudgetAlert, BudgetEnvelope, OrgSummary, OrgTree, ProjectConfig, ProjectSummary, TeamConfig,
     TeamSummary,
@@ -94,71 +104,63 @@ pub use comparison::{CostProjection, ProviderComparison, WorkloadProfile};
 pub use cost::{CacheBreakdown, CostLedger, CostRecord, ModelStats};
 pub use error::DashboardError;
 pub use export::{CostExporter, ExportFormat};
-pub use forecast::{CostForecaster, ForecastResult, HoltWintersForecast, SpendForecaster, Trend,
-    EsCostForecaster, ForecastMethod, SimpleEsModel, DoubleEsModel, HoltWintersModel};
+pub use forecast::{
+    CostForecaster, DoubleEsModel, EsCostForecaster, ForecastMethod, ForecastResult,
+    HoltWintersForecast, HoltWintersModel, SimpleEsModel, SpendForecaster, Trend,
+};
 pub use log::{LogEntry, RequestLog};
 pub use org::{Organization, Project, Team};
 pub use tags::{TagIndex, TaggedRecord, Tags};
+pub use tenant::{Tenant, TenantIsolator, TenantLedger, TenantReport};
 pub use trace::{SpanStore, TraceSpan};
+pub use trends::{DailySpend, TrendAnalyzer, TrendReport};
 #[cfg(feature = "tui")]
 pub use ui::App;
 pub use validator::{
     AnthropicValidator, GoogleValidator, MultiValidator, OpenAiValidator, ValidationResult,
 };
 pub use webhook::{WebhookConfig, WebhookFormat};
-pub use allocation::{
-    AllocationBucket, AllocationRule, AllocationTag, AllocationLedger, AllocationReport,
-    BudgetHierarchy, CostAllocation, CostAllocator, Environment, ProjectBudget, TeamBudget,
-    TeamUsage, teams_tab_rows,
-};
-pub use trends::{DailySpend, TrendAnalyzer, TrendReport};
-pub use alerts::{Alert, AlertChannel, AlertEngine, AlertRule, AlertSummary, AlertWindow};
-pub use anomaly::{AnomalyConfig, AnomalyDetector, AnomalyReport, AnomalyResult};
-pub use budget::planner::{
-    AllocationStatus, BudgetAllocation, BudgetForecast, BudgetPeriod, BudgetPlan, BudgetPlanner,
-};
-pub use tenant::{Tenant, TenantIsolator, TenantLedger, TenantReport};
-pub mod webhook_dispatch;
 pub mod aggregator;
-pub mod billing;
-pub mod capacity;
-pub mod visualization;
-pub mod alert_rules;
-pub mod chargeback;
-pub mod session_cost;
-pub mod notification;
-pub mod benchmark;
-pub mod cost_optimizer;
-pub mod usage_limiter;
-pub mod cost_allocation;
-pub mod price_tracker;
-pub mod efficiency_analyzer;
-pub mod model_lifecycle;
-pub mod roi_calculator;
-pub mod experiment_tracker;
-pub mod cost_governance;
-pub mod invoice_generator;
-pub mod model_registry;
-pub mod anomaly_detector;
-pub mod budget_planner;
-pub mod usage_reporter;
-pub mod cost_allocator_v2;
-pub mod pricing_engine;
-pub mod audit_logger;
-pub mod cost_predictor;
-pub mod resource_quota;
-pub mod token_optimizer;
-pub mod benchmark_runner;
 pub mod alert_manager;
-pub mod dashboard_metrics;
-pub mod trend_analyzer;
-pub mod cost_attribution;
-pub mod capacity_planner;
-pub mod sla_monitor;
-pub mod cohort_analyzer;
-pub mod savings_calculator;
-pub mod multi_tenant;
-pub mod cost_forecast;
-pub mod integration_webhooks;
+pub mod alert_rules;
+pub mod anomaly_detector;
+pub mod audit_logger;
+pub mod benchmark;
+pub mod benchmark_runner;
+pub mod billing;
 pub mod budget_controller;
+pub mod budget_planner;
+pub mod capacity;
+pub mod capacity_planner;
+pub mod chargeback;
+pub mod cohort_analyzer;
+pub mod cost_allocation;
+pub mod cost_allocator_v2;
+pub mod cost_attribution;
+pub mod cost_forecast;
+pub mod cost_governance;
+pub mod cost_optimizer;
+pub mod cost_predictor;
+pub mod dashboard_metrics;
+pub mod efficiency_analyzer;
+pub mod experiment_tracker;
+pub mod integration_webhooks;
+pub mod invoice_generator;
+pub mod model_lifecycle;
+pub mod model_registry;
+pub mod multi_tenant;
+pub mod notification;
+pub mod price_tracker;
+pub mod pricing_engine;
+pub mod resource_quota;
+pub mod roi_calculator;
+pub mod savings_calculator;
+pub mod session_cost;
+pub mod sla_monitor;
+pub mod token_optimizer;
+pub mod trend_analyzer;
+pub mod usage_limiter;
 pub mod usage_report;
+pub mod usage_reporter;
+pub mod visualization;
+pub mod webhook_dispatch;

@@ -302,10 +302,7 @@ impl AlertManager {
             AlertSeverity::Critical,
             AlertSeverity::Emergency,
         ];
-        all.iter()
-            .copied()
-            .filter(|&s| s >= severity)
-            .collect()
+        all.iter().copied().filter(|&s| s >= severity).collect()
     }
 }
 
@@ -365,7 +362,11 @@ mod tests {
         let chain = mgr.escalation_chain(AlertSeverity::Warning);
         assert_eq!(
             chain,
-            vec![AlertSeverity::Warning, AlertSeverity::Critical, AlertSeverity::Emergency]
+            vec![
+                AlertSeverity::Warning,
+                AlertSeverity::Critical,
+                AlertSeverity::Emergency
+            ]
         );
     }
 

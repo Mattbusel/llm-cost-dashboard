@@ -87,10 +87,7 @@ fn ols(pairs: &[(f64, f64)]) -> (f64, f64) {
     }
     let mean_x: f64 = pairs.iter().map(|p| p.0).sum::<f64>() / n;
     let mean_y: f64 = pairs.iter().map(|p| p.1).sum::<f64>() / n;
-    let ss_xy: f64 = pairs
-        .iter()
-        .map(|p| (p.0 - mean_x) * (p.1 - mean_y))
-        .sum();
+    let ss_xy: f64 = pairs.iter().map(|p| (p.0 - mean_x) * (p.1 - mean_y)).sum();
     let ss_xx: f64 = pairs.iter().map(|p| (p.0 - mean_x).powi(2)).sum();
     if ss_xx.abs() < 1e-12 {
         return (0.0, mean_y);
@@ -216,8 +213,10 @@ impl CapacityPlanner {
         let alpha = alpha.clamp(0.01, 0.99);
 
         // Smooth tokens and cost independently.
-        let (tok_level, tok_trend) = holt_smooth(&daily.iter().map(|d| d.1).collect::<Vec<_>>(), alpha, beta);
-        let (cost_level, cost_trend) = holt_smooth(&daily.iter().map(|d| d.2).collect::<Vec<_>>(), alpha, beta);
+        let (tok_level, tok_trend) =
+            holt_smooth(&daily.iter().map(|d| d.1).collect::<Vec<_>>(), alpha, beta);
+        let (cost_level, cost_trend) =
+            holt_smooth(&daily.iter().map(|d| d.2).collect::<Vec<_>>(), alpha, beta);
 
         let mut forecast_tokens = Vec::new();
         let mut forecast_cost = Vec::new();
@@ -306,8 +305,18 @@ impl CapacityPlanner {
         if self.observations.is_empty() {
             return None;
         }
-        let min_ts = self.observations.iter().map(|p| p.timestamp).min().unwrap_or(0);
-        let max_ts = self.observations.iter().map(|p| p.timestamp).max().unwrap_or(0);
+        let min_ts = self
+            .observations
+            .iter()
+            .map(|p| p.timestamp)
+            .min()
+            .unwrap_or(0);
+        let max_ts = self
+            .observations
+            .iter()
+            .map(|p| p.timestamp)
+            .max()
+            .unwrap_or(0);
 
         if max_ts - min_ts < WEEK * 2 {
             return None;
@@ -348,7 +357,11 @@ impl CapacityPlanner {
             .map(|d| format!("{:.1} days", d))
             .unwrap_or_else(|| "N/A".to_string());
         let peak_hours = self.peak_usage_hours();
-        let peak_str: Vec<String> = peak_hours.iter().take(3).map(|h| format!("{:02}:00", h)).collect();
+        let peak_str: Vec<String> = peak_hours
+            .iter()
+            .take(3)
+            .map(|h| format!("{:02}:00", h))
+            .collect();
 
         let divider = "─".repeat(60);
         let mut out = String::new();
@@ -361,9 +374,16 @@ impl CapacityPlanner {
         out.push_str(&format!("Budget runway    : {}\n", runway));
         out.push_str(&format!(
             "Peak hours       : {}\n",
-            if peak_str.is_empty() { "N/A".to_string() } else { peak_str.join(", ") }
+            if peak_str.is_empty() {
+                "N/A".to_string()
+            } else {
+                peak_str.join(", ")
+            }
         ));
-        out.push_str(&format!("CI (cost ±)      : {:.4}\n", forecast.confidence_interval.1));
+        out.push_str(&format!(
+            "CI (cost ±)      : {:.4}\n",
+            forecast.confidence_interval.1
+        ));
         out.push_str(&format!("{}\n", divider));
 
         // ASCII bar chart of forecast cost.
@@ -515,7 +535,11 @@ mod tests {
     #[test]
     fn test_growth_rate_insufficient_data() {
         let mut planner = CapacityPlanner::new();
-        planner.add_observation(UsagePoint { timestamp: 0, tokens: 1000, cost: 1.0 });
+        planner.add_observation(UsagePoint {
+            timestamp: 0,
+            tokens: 1000,
+            cost: 1.0,
+        });
         assert!(planner.growth_rate().is_none());
     }
 

@@ -93,9 +93,7 @@ impl CostOptimizer {
         let candidates: Vec<&ModelProfile> = self
             .profiles
             .values()
-            .filter(|p| {
-                p.context_window >= token_count && p.avg_quality_score >= quality_threshold
-            })
+            .filter(|p| p.context_window >= token_count && p.avg_quality_score >= quality_threshold)
             .collect();
 
         if candidates.is_empty() {
@@ -136,15 +134,33 @@ impl CostOptimizer {
             }
         };
 
-        candidates
-            .into_iter()
-            .max_by(|a, b| {
-                let score_a = self.score(a, objective, normalise, max_cost, min_cost, max_latency, min_latency, max_quality, min_quality);
-                let score_b = self.score(b, objective, normalise, max_cost, min_cost, max_latency, min_latency, max_quality, min_quality);
-                score_a
-                    .partial_cmp(&score_b)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
+        candidates.into_iter().max_by(|a, b| {
+            let score_a = self.score(
+                a,
+                objective,
+                normalise,
+                max_cost,
+                min_cost,
+                max_latency,
+                min_latency,
+                max_quality,
+                min_quality,
+            );
+            let score_b = self.score(
+                b,
+                objective,
+                normalise,
+                max_cost,
+                min_cost,
+                max_latency,
+                min_latency,
+                max_quality,
+                min_quality,
+            );
+            score_a
+                .partial_cmp(&score_b)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -344,7 +360,11 @@ mod tests {
         opt.register_model(make_profile("dominated", 0.010, 0.70, 200.0, 32_768));
         opt.register_model(make_profile("mid", 0.005, 0.85, 200.0, 32_768));
         opt.register_model(make_profile("cheap_low", 0.001, 0.60, 300.0, 8_192));
-        let frontier: Vec<&str> = opt.pareto_frontier().iter().map(|p| p.model_id.as_str()).collect();
+        let frontier: Vec<&str> = opt
+            .pareto_frontier()
+            .iter()
+            .map(|p| p.model_id.as_str())
+            .collect();
         assert!(!frontier.contains(&"dominated"));
         assert!(frontier.contains(&"mid"));
         assert!(frontier.contains(&"cheap_low"));

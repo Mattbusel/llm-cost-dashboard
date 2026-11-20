@@ -325,8 +325,14 @@ mod tests {
 
     #[test]
     fn severity_classify_low_at_boundary() {
-        assert_eq!(AnomalySeverity::classify(2.0).unwrap(), AnomalySeverity::Low);
-        assert_eq!(AnomalySeverity::classify(2.9).unwrap(), AnomalySeverity::Low);
+        assert_eq!(
+            AnomalySeverity::classify(2.0).unwrap(),
+            AnomalySeverity::Low
+        );
+        assert_eq!(
+            AnomalySeverity::classify(2.9).unwrap(),
+            AnomalySeverity::Low
+        );
     }
 
     #[test]
@@ -343,6 +349,9 @@ mod tests {
 
     #[test]
     fn severity_classify_high_at_5x() {
-        assert_eq!(AnomalySeverity::classify(5.0).unwrap(), AnomalySeverity::High);
+        assert_eq!(
+            AnomalySeverity::classify(5.0).unwrap(),
+            AnomalySeverity::High
+        );
     }
 }

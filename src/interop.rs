@@ -88,7 +88,11 @@ pub mod async_openai {
             assert_eq!(rec.cache.cache_read_tokens, 600);
             // 400 x $2.50 + 600 x $1.25 + 100 x $10, per million.
             let expected = (400.0 * 2.5 + 600.0 * 1.25 + 100.0 * 10.0) / 1e6;
-            assert!((rec.total_cost_usd - expected).abs() < 1e-12, "{}", rec.total_cost_usd);
+            assert!(
+                (rec.total_cost_usd - expected).abs() < 1e-12,
+                "{}",
+                rec.total_cost_usd
+            );
             assert_eq!(rec.timestamp.timestamp(), 1_790_000_000);
             // The same response as a log line gives the same cost.
             let mut ing = crate::ingest::Ingester::new();

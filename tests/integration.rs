@@ -3,7 +3,6 @@
 //! These tests exercise the public API as a whole, verifying that components
 //! compose correctly end-to-end.
 #![cfg(feature = "tui")]
-
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use llm_cost_dashboard::{

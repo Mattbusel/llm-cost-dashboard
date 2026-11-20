@@ -148,19 +148,17 @@ impl MetricsRegistry {
     /// Register a histogram metric with the given bucket boundaries.
     ///
     /// A `+Inf` bucket is appended automatically if not already present.
-    pub fn register_histogram(
-        &self,
-        name: &str,
-        help: &str,
-        mut buckets: Vec<f64>,
-    ) -> Arc<Metric> {
+    pub fn register_histogram(&self, name: &str, help: &str, mut buckets: Vec<f64>) -> Arc<Metric> {
         // Ensure +Inf bucket exists.
         if buckets.last().copied().unwrap_or(0.0) < f64::INFINITY {
             buckets.push(f64::INFINITY);
         }
         let histo_buckets: Vec<HistogramBucket> = buckets
             .iter()
-            .map(|&ub| HistogramBucket { upper_bound: ub, count: 0 })
+            .map(|&ub| HistogramBucket {
+                upper_bound: ub,
+                count: 0,
+            })
             .collect();
 
         self.metrics
@@ -280,7 +278,11 @@ impl MetricsRegistry {
                     MetricValue::GaugeValue(g) => {
                         out.push_str(&format!("{}{} {}\n", metric.name, label_str, g));
                     }
-                    MetricValue::HistogramValue { buckets, sum, count } => {
+                    MetricValue::HistogramValue {
+                        buckets,
+                        sum,
+                        count,
+                    } => {
                         for bucket in buckets {
                             let bound = if bucket.upper_bound == f64::INFINITY {
                                 "+Inf".to_string()
@@ -364,7 +366,10 @@ mod tests {
         reg.register_gauge("temperature", "Current temperature");
         reg.set_gauge("temperature", 42.0);
         let snap = reg.snapshot();
-        let val = snap.iter().find(|(n, _)| n == "temperature").map(|(_, v)| *v);
+        let val = snap
+            .iter()
+            .find(|(n, _)| n == "temperature")
+            .map(|(_, v)| *v);
         assert_eq!(val, Some(42.0));
     }
 
@@ -375,7 +380,10 @@ mod tests {
         reg.observe_histogram("latency", 25.0);
         reg.observe_histogram("latency", 75.0);
         let snap = reg.snapshot();
-        let sum = snap.iter().find(|(n, _)| n == "latency_sum").map(|(_, v)| *v);
+        let sum = snap
+            .iter()
+            .find(|(n, _)| n == "latency_sum")
+            .map(|(_, v)| *v);
         assert_eq!(sum, Some(100.0));
     }
 

@@ -163,11 +163,7 @@ impl Invoice {
         let mut out = String::new();
 
         out.push_str(&format!("{}\n", divider));
-        out.push_str(&format!(
-            "{:^width$}\n",
-            "INVOICE",
-            width = width
-        ));
+        out.push_str(&format!("{:^width$}\n", "INVOICE", width = width));
         out.push_str(&format!("{}\n", divider));
         out.push_str(&format!("Invoice #: {}\n", self.id));
         out.push_str(&format!("Tenant   : {}\n", self.tenant));
@@ -267,12 +263,7 @@ impl InvoiceBuilder {
     ///
     /// `tokens` is the raw token count; `cost_per_1k` is the cost per 1 000
     /// tokens.  The line item quantity is expressed in thousands of tokens.
-    pub fn add_model_usage(
-        mut self,
-        model: &str,
-        tokens: u64,
-        cost_per_1k: f64,
-    ) -> Self {
+    pub fn add_model_usage(mut self, model: &str, tokens: u64, cost_per_1k: f64) -> Self {
         let qty = tokens as f64 / 1000.0;
         let item = LineItem::new(
             format!("Model: {}", model),
@@ -377,9 +368,17 @@ mod tests {
         let mut inv = Invoice::new("INV-1", "Acme", 0, 0, 0.10);
         inv.add_line_item(LineItem::new("Item A", 10.0, "units", 5.0)); // 50
         inv.add_line_item(LineItem::new("Item B", 2.0, "units", 25.0)); // 50
-        // subtotal = 100, tax = 10, total = 110
-        assert!((inv.subtotal - 100.0).abs() < 1e-9, "subtotal={}", inv.subtotal);
-        assert!((inv.tax_amount - 10.0).abs() < 1e-9, "tax={}", inv.tax_amount);
+                                                                        // subtotal = 100, tax = 10, total = 110
+        assert!(
+            (inv.subtotal - 100.0).abs() < 1e-9,
+            "subtotal={}",
+            inv.subtotal
+        );
+        assert!(
+            (inv.tax_amount - 10.0).abs() < 1e-9,
+            "tax={}",
+            inv.tax_amount
+        );
         assert!((inv.total - 110.0).abs() < 1e-9, "total={}", inv.total);
     }
 
@@ -392,7 +391,10 @@ mod tests {
             .tax_rate(0.08)
             .build();
         let text = inv.to_text();
-        assert!(text.contains("BigCo LLC"), "tenant name missing from invoice");
+        assert!(
+            text.contains("BigCo LLC"),
+            "tenant name missing from invoice"
+        );
         assert!(text.contains("INV-42"), "invoice id missing");
         assert!(text.contains("TOTAL:"), "total line missing");
     }
@@ -407,7 +409,11 @@ mod tests {
             .build();
 
         // 500 (qty in k) * 30.0 = 15000
-        assert!((inv.subtotal - 15_000.0).abs() < 1e-6, "subtotal={}", inv.subtotal);
+        assert!(
+            (inv.subtotal - 15_000.0).abs() < 1e-6,
+            "subtotal={}",
+            inv.subtotal
+        );
         assert_eq!(inv.tenant, "Startup");
         assert_eq!(inv.line_items.len(), 1);
     }
@@ -415,9 +421,7 @@ mod tests {
     #[test]
     fn test_store_mark_paid() {
         let mut store = InvoiceStore::default();
-        let inv = InvoiceBuilder::new("INV-7")
-            .for_tenant("Corp")
-            .build();
+        let inv = InvoiceBuilder::new("INV-7").for_tenant("Corp").build();
         store.add(inv);
         assert!(store.mark_paid("INV-7"));
         assert_eq!(store.get("INV-7").unwrap().status, InvoiceStatus::Paid);

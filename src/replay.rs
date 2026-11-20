@@ -109,11 +109,7 @@ impl EventStore {
     /// Return all events with sequence number >= `seq`.
     pub async fn replay_from(&self, seq: u64) -> Vec<(u64, AuditEvent)> {
         let guard = self.inner.read().await;
-        guard
-            .iter()
-            .filter(|(s, _)| *s >= seq)
-            .cloned()
-            .collect()
+        guard.iter().filter(|(s, _)| *s >= seq).cloned().collect()
     }
 
     /// Return the total number of events stored.
@@ -219,8 +215,7 @@ impl LatencyProjection {
         if self.latencies.is_empty() {
             return None;
         }
-        let idx =
-            ((pct / 100.0) * (self.latencies.len() - 1) as f64).round() as usize;
+        let idx = ((pct / 100.0) * (self.latencies.len() - 1) as f64).round() as usize;
         Some(self.latencies[idx.min(self.latencies.len() - 1)])
     }
 

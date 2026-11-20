@@ -34,18 +34,30 @@ pub fn ols_fit(x: &[f64], y: &[f64]) -> LinearModel {
     assert_eq!(x.len(), y.len(), "x and y must have the same length");
     let n = x.len() as f64;
     if n == 0.0 {
-        return LinearModel { slope: 0.0, intercept: 0.0, r_squared: 0.0 };
+        return LinearModel {
+            slope: 0.0,
+            intercept: 0.0,
+            r_squared: 0.0,
+        };
     }
 
     let x_mean = x.iter().sum::<f64>() / n;
     let y_mean = y.iter().sum::<f64>() / n;
 
     let ss_xx: f64 = x.iter().map(|&xi| (xi - x_mean).powi(2)).sum();
-    let ss_xy: f64 = x.iter().zip(y.iter()).map(|(&xi, &yi)| (xi - x_mean) * (yi - y_mean)).sum();
+    let ss_xy: f64 = x
+        .iter()
+        .zip(y.iter())
+        .map(|(&xi, &yi)| (xi - x_mean) * (yi - y_mean))
+        .sum();
     let ss_yy: f64 = y.iter().map(|&yi| (yi - y_mean).powi(2)).sum();
 
     if ss_xx.abs() < f64::EPSILON {
-        return LinearModel { slope: 0.0, intercept: y_mean, r_squared: 0.0 };
+        return LinearModel {
+            slope: 0.0,
+            intercept: y_mean,
+            r_squared: 0.0,
+        };
     }
 
     let slope = ss_xy / ss_xx;
@@ -63,7 +75,11 @@ pub fn ols_fit(x: &[f64], y: &[f64]) -> LinearModel {
         1.0 - ss_res / ss_yy
     };
 
-    LinearModel { slope, intercept, r_squared }
+    LinearModel {
+        slope,
+        intercept,
+        r_squared,
+    }
 }
 
 /// Trend summary for a cost series.
@@ -102,18 +118,32 @@ impl CostPredictor {
     /// Return references to data points that fall within the last `window_days`.
     pub fn recent_data(&self, now_ms: u64) -> Vec<&UsageDataPoint> {
         let cutoff = now_ms.saturating_sub(self.window_days as u64 * 86_400_000);
-        self.history.iter().filter(|dp| dp.timestamp_ms >= cutoff).collect()
+        self.history
+            .iter()
+            .filter(|dp| dp.timestamp_ms >= cutoff)
+            .collect()
     }
 
     /// Aggregate recent data into (day_index, daily_cost) pairs and fit OLS.
     fn fit_daily_model(&self, now_ms: u64) -> (LinearModel, f64) {
         let recent = self.recent_data(now_ms);
         if recent.is_empty() {
-            return (LinearModel { slope: 0.0, intercept: 0.0, r_squared: 0.0 }, 0.0);
+            return (
+                LinearModel {
+                    slope: 0.0,
+                    intercept: 0.0,
+                    r_squared: 0.0,
+                },
+                0.0,
+            );
         }
 
         // Bucket by day relative to the earliest point in the window.
-        let min_ts = recent.iter().map(|dp| dp.timestamp_ms).min().unwrap_or(now_ms);
+        let min_ts = recent
+            .iter()
+            .map(|dp| dp.timestamp_ms)
+            .min()
+            .unwrap_or(now_ms);
         let mut daily: HashMap<i64, f64> = HashMap::new();
         for dp in &recent {
             let day = ((dp.timestamp_ms - min_ts) / 86_400_000) as i64;
@@ -177,7 +207,11 @@ impl CostPredictor {
         }
         let n = recent.len() as f64;
         let mean = recent.iter().map(|d| d.cost_usd).sum::<f64>() / n;
-        let variance = recent.iter().map(|d| (d.cost_usd - mean).powi(2)).sum::<f64>() / n;
+        let variance = recent
+            .iter()
+            .map(|d| (d.cost_usd - mean).powi(2))
+            .sum::<f64>()
+            / n;
         let std = crate::anomaly::effective_stddev(variance.sqrt(), mean);
         (dp.cost_usd - mean) / std
     }

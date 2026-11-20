@@ -237,14 +237,7 @@ impl CostAllocator {
                 .unwrap_or_else(|| "".to_string());
             lines.push(format!(
                 "{},{},{:.6},{},{},{},{},{}",
-                b.team,
-                b.project,
-                b.total_cost_usd,
-                b.request_count,
-                budget,
-                util,
-                over,
-                top,
+                b.team, b.project, b.total_cost_usd, b.request_count, budget, util, over, top,
             ));
         }
         lines.join("\n")
@@ -279,7 +272,10 @@ impl CostAllocator {
 
     /// Return all buckets whose cost exceeds their configured budget.
     pub fn over_budget_buckets(&self) -> Vec<&AllocationBucket> {
-        self.buckets.values().filter(|b| b.is_over_budget()).collect()
+        self.buckets
+            .values()
+            .filter(|b| b.is_over_budget())
+            .collect()
     }
 
     // ── private ────────────────────────────────────────────────────────────
@@ -466,12 +462,7 @@ pub struct CostAllocation {
 
 impl CostAllocation {
     /// Create a new allocation event.
-    pub fn new(
-        tag: AllocationTag,
-        cost_usd: f64,
-        model: impl Into<String>,
-        tokens: u64,
-    ) -> Self {
+    pub fn new(tag: AllocationTag, cost_usd: f64, model: impl Into<String>, tokens: u64) -> Self {
         Self {
             tag,
             cost_usd,
@@ -851,15 +842,9 @@ impl AllocationReport {
         let mut teams: Vec<TeamUsage> = team_cost
             .iter()
             .map(|(team, &cost)| {
-                let budget_usd = hierarchy
-                    .team_budget(team)
-                    .map(|tb| tb.budget_usd);
-                let utilization_pct = budget_usd
-                    .filter(|&b| b > 0.0)
-                    .map(|b| (cost / b) * 100.0);
-                let over_budget = budget_usd
-                    .map(|b| cost > b)
-                    .unwrap_or(false);
+                let budget_usd = hierarchy.team_budget(team).map(|tb| tb.budget_usd);
+                let utilization_pct = budget_usd.filter(|&b| b > 0.0).map(|b| (cost / b) * 100.0);
+                let over_budget = budget_usd.map(|b| cost > b).unwrap_or(false);
                 let request_count = *team_requests.get(team).unwrap_or(&0);
 
                 // Top-3 projects by spend.
@@ -869,9 +854,7 @@ impl AllocationReport {
                     .unwrap_or_default()
                     .into_iter()
                     .collect();
-                proj_vec.sort_by(|a, b| {
-                    b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
-                });
+                proj_vec.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
                 proj_vec.truncate(3);
 
                 TeamUsage {
@@ -931,26 +914,18 @@ impl AllocationReport {
     ///
     /// Columns: `team,total_cost_usd,budget_usd,utilization_pct,over_budget,request_count`
     pub fn to_csv(&self) -> String {
-        let mut lines =
-            vec!["team,total_cost_usd,budget_usd,utilization_pct,over_budget,request_count"
-                .to_string()];
+        let mut lines = vec![
+            "team,total_cost_usd,budget_usd,utilization_pct,over_budget,request_count".to_string(),
+        ];
         for t in &self.teams {
-            let budget = t
-                .budget_usd
-                .map(|v| format!("{v:.4}"))
-                .unwrap_or_default();
+            let budget = t.budget_usd.map(|v| format!("{v:.4}")).unwrap_or_default();
             let util = t
                 .utilization_pct
                 .map(|v| format!("{v:.2}"))
                 .unwrap_or_default();
             lines.push(format!(
                 "{},{:.6},{},{},{},{}",
-                t.team,
-                t.total_cost_usd,
-                budget,
-                util,
-                t.over_budget,
-                t.request_count,
+                t.team, t.total_cost_usd, budget, util, t.over_budget, t.request_count,
             ));
         }
         lines.join("\n")
@@ -1134,14 +1109,7 @@ mod tests {
     #[test]
     fn test_budget_utilization() {
         let mut a = CostAllocator::new();
-        a.add_rule(make_rule(
-            "r1",
-            "eng",
-            "ml",
-            Some("ml-"),
-            None,
-            Some(100.0),
-        ));
+        a.add_rule(make_rule("r1", "eng", "ml", Some("ml-"), None, Some(100.0)));
         a.record("ml-session", "gpt-4o", 25.0, &empty_tags());
         let b = a.bucket("eng", "ml").unwrap();
         let pct = b.budget_utilization_pct().unwrap();
@@ -1319,9 +1287,8 @@ mod tests {
     #[test]
     fn test_budget_hierarchy_user_quota() {
         let mut h = BudgetHierarchy::new();
-        let team = TeamBudget::new("engineering", 500.0).with_project(
-            ProjectBudget::new("backend", 200.0).with_user_quota("alice", 50.0),
-        );
+        let team = TeamBudget::new("engineering", 500.0)
+            .with_project(ProjectBudget::new("backend", 200.0).with_user_quota("alice", 50.0));
         h.add_team(team);
         assert!((h.effective_limit("engineering", "backend", "alice") - 50.0).abs() < 1e-9);
         assert!((h.effective_limit("engineering", "backend", "bob") - 200.0).abs() < 1e-9);
@@ -1397,9 +1364,9 @@ mod tests {
         let ledger = AllocationLedger::new();
         let h = BudgetHierarchy::new();
         let report = AllocationReport::build(&ledger, &h);
-        assert!(report
-            .to_csv()
-            .starts_with("team,total_cost_usd,budget_usd,utilization_pct,over_budget,request_count"));
+        assert!(report.to_csv().starts_with(
+            "team,total_cost_usd,budget_usd,utilization_pct,over_budget,request_count"
+        ));
     }
 
     #[test]

@@ -259,7 +259,7 @@ mod tests {
     fn cost_index_relative_to_baseline() {
         let mut tracker = PriceTracker::new();
         tracker.record_price(make_price("baseline", 2.0, 8.0, 1_000)); // combined = 10
-        tracker.record_price(make_price("model", 4.0, 16.0, 1_000));   // combined = 20
+        tracker.record_price(make_price("model", 4.0, 16.0, 1_000)); // combined = 20
         let idx = tracker.cost_index("model", "baseline").expect("must exist");
         assert!((idx - 2.0).abs() < 1e-9);
     }

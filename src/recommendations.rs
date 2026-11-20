@@ -21,8 +21,8 @@
 
 use std::collections::HashMap;
 
-use crate::cost::CostLedger;
 use crate::cost::pricing::lookup;
+use crate::cost::CostLedger;
 
 /// A usage pattern extracted from ledger records for a single model.
 #[derive(Debug, Clone)]
@@ -90,43 +90,70 @@ static ALTERNATIVES: &[(&str, &[(&str, &str)])] = &[
     (
         "claude-opus-4-6",
         &[
-            ("claude-sonnet-4-6", "5x cheaper; handles most tasks equally well"),
-            ("claude-haiku-4-5", "60x cheaper; ideal for short/simple queries"),
+            (
+                "claude-sonnet-4-6",
+                "5x cheaper; handles most tasks equally well",
+            ),
+            (
+                "claude-haiku-4-5",
+                "60x cheaper; ideal for short/simple queries",
+            ),
         ],
     ),
     (
         "claude-sonnet-4-6",
         &[
-            ("claude-haiku-4-5", "12x cheaper; great for short queries <500 tokens"),
-            ("gpt-4o-mini", "20x cheaper; competitive quality on simple tasks"),
+            (
+                "claude-haiku-4-5",
+                "12x cheaper; great for short queries <500 tokens",
+            ),
+            (
+                "gpt-4o-mini",
+                "20x cheaper; competitive quality on simple tasks",
+            ),
         ],
     ),
     (
         "gpt-4o",
         &[
-            ("gpt-4o-mini", "33x cheaper; handles most chat and completion tasks"),
+            (
+                "gpt-4o-mini",
+                "33x cheaper; handles most chat and completion tasks",
+            ),
             ("claude-haiku-4-5", "20x cheaper; fast and cost-effective"),
         ],
     ),
     (
         "gpt-4-turbo",
         &[
-            ("gpt-4o", "2x cheaper; equivalent quality on most benchmarks"),
+            (
+                "gpt-4o",
+                "2x cheaper; equivalent quality on most benchmarks",
+            ),
             ("gpt-4o-mini", "66x cheaper; suitable for simple workloads"),
         ],
     ),
     (
         "o1",
         &[
-            ("o3-mini", "13x cheaper; similar reasoning for most problems"),
+            (
+                "o3-mini",
+                "13x cheaper; similar reasoning for most problems",
+            ),
             ("gpt-4o", "3x cheaper; good for non-reasoning tasks"),
         ],
     ),
     (
         "o3",
         &[
-            ("o3-mini", "9x cheaper; comparable reasoning on most benchmarks"),
-            ("gpt-4o-mini", "66x cheaper; for tasks not requiring deep reasoning"),
+            (
+                "o3-mini",
+                "9x cheaper; comparable reasoning on most benchmarks",
+            ),
+            (
+                "gpt-4o-mini",
+                "66x cheaper; for tasks not requiring deep reasoning",
+            ),
         ],
     ),
     (
@@ -139,8 +166,14 @@ static ALTERNATIVES: &[(&str, &[(&str, &str)])] = &[
     (
         "claude-3-opus-20240229",
         &[
-            ("claude-sonnet-4-6", "5x cheaper; more capable on most tasks"),
-            ("claude-haiku-4-5", "60x cheaper; for high-volume short requests"),
+            (
+                "claude-sonnet-4-6",
+                "5x cheaper; more capable on most tasks",
+            ),
+            (
+                "claude-haiku-4-5",
+                "60x cheaper; for high-volume short requests",
+            ),
         ],
     ),
     (
@@ -153,7 +186,10 @@ static ALTERNATIVES: &[(&str, &[(&str, &str)])] = &[
     (
         "mistral-large-2411",
         &[
-            ("mistral-small-2501", "20x cheaper; good for instruction-following"),
+            (
+                "mistral-small-2501",
+                "20x cheaper; good for instruction-following",
+            ),
             ("mistral-nemo", "13x cheaper; efficient and capable"),
         ],
     ),
@@ -184,9 +220,21 @@ impl<'a> ModelRecommender<'a> {
                 let total_in: u64 = recs.iter().map(|r| r.input_tokens).sum();
                 let total_out: u64 = recs.iter().map(|r| r.output_tokens).sum();
                 let total_cost: f64 = recs.iter().map(|r| r.total_cost_usd).sum();
-                let avg_cost = if count > 0 { total_cost / count as f64 } else { 0.0 };
-                let avg_in = if count > 0 { total_in as f64 / count as f64 } else { 0.0 };
-                let avg_out = if count > 0 { total_out as f64 / count as f64 } else { 0.0 };
+                let avg_cost = if count > 0 {
+                    total_cost / count as f64
+                } else {
+                    0.0
+                };
+                let avg_in = if count > 0 {
+                    total_in as f64 / count as f64
+                } else {
+                    0.0
+                };
+                let avg_out = if count > 0 {
+                    total_out as f64 / count as f64
+                } else {
+                    0.0
+                };
                 UsagePattern {
                     model,
                     request_count: count,
@@ -312,7 +360,10 @@ mod tests {
         let r = ModelRecommender::new(&ledger);
         let patterns = r.patterns();
         assert_eq!(patterns.len(), 2);
-        let sonnet = patterns.iter().find(|p| p.model == "claude-sonnet-4-6").unwrap();
+        let sonnet = patterns
+            .iter()
+            .find(|p| p.model == "claude-sonnet-4-6")
+            .unwrap();
         assert_eq!(sonnet.request_count, 2);
     }
 
@@ -324,7 +375,10 @@ mod tests {
         ]);
         let r = ModelRecommender::new(&ledger);
         let suggestions = r.suggest();
-        assert!(!suggestions.is_empty(), "should suggest cheaper alternatives");
+        assert!(
+            !suggestions.is_empty(),
+            "should suggest cheaper alternatives"
+        );
         // All suggestions should be for cheaper models.
         for s in &suggestions {
             assert!(s.saving_pct > 0.0);

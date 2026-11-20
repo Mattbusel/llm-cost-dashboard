@@ -86,10 +86,7 @@ pub struct SummaryResponse {
 /// # Errors
 ///
 /// Returns [`DashboardError::Terminal`] if the TCP listener cannot be bound.
-pub async fn serve(
-    ledger: Arc<Mutex<CostLedger>>,
-    port: u16,
-) -> Result<(), DashboardError> {
+pub async fn serve(ledger: Arc<Mutex<CostLedger>>, port: u16) -> Result<(), DashboardError> {
     serve_on(ledger, SocketAddr::from(([127, 0, 0, 1], port))).await
 }
 
@@ -167,32 +164,67 @@ pub fn prometheus_text(ledger: &CostLedger) -> String {
     let mut by: std::collections::BTreeMap<(&str, &str), (u64, f64, u64, u64)> =
         std::collections::BTreeMap::new();
     for r in ledger.records() {
-        let e = by.entry((r.model.as_str(), r.provider.as_str())).or_default();
+        let e = by
+            .entry((r.model.as_str(), r.provider.as_str()))
+            .or_default();
         e.0 += 1;
         e.1 += r.total_cost_usd;
         e.2 += r.input_tokens + r.cache.cache_read_tokens + r.cache.cache_write_tokens;
         e.3 += r.output_tokens;
     }
     let mut out = String::new();
-    let _ = writeln!(out, "# HELP llm_cost_usd_total Spend in US dollars, priced from the model table.");
+    let _ = writeln!(
+        out,
+        "# HELP llm_cost_usd_total Spend in US dollars, priced from the model table."
+    );
     let _ = writeln!(out, "# TYPE llm_cost_usd_total counter");
     for ((m, p), (_, cost, _, _)) in &by {
-        let _ = writeln!(out, "llm_cost_usd_total{{model=\"{}\",provider=\"{}\"}} {cost}", label(m), label(p));
+        let _ = writeln!(
+            out,
+            "llm_cost_usd_total{{model=\"{}\",provider=\"{}\"}} {cost}",
+            label(m),
+            label(p)
+        );
     }
     let _ = writeln!(out, "# HELP llm_requests_total Requests in the ledger.");
     let _ = writeln!(out, "# TYPE llm_requests_total counter");
     for ((m, p), (n, _, _, _)) in &by {
-        let _ = writeln!(out, "llm_requests_total{{model=\"{}\",provider=\"{}\"}} {n}", label(m), label(p));
+        let _ = writeln!(
+            out,
+            "llm_requests_total{{model=\"{}\",provider=\"{}\"}} {n}",
+            label(m),
+            label(p)
+        );
     }
-    let _ = writeln!(out, "# HELP llm_tokens_total Tokens, input (including prompt-cache tokens) and output.");
+    let _ = writeln!(
+        out,
+        "# HELP llm_tokens_total Tokens, input (including prompt-cache tokens) and output."
+    );
     let _ = writeln!(out, "# TYPE llm_tokens_total counter");
     for ((m, p), (_, _, input, output)) in &by {
-        let _ = writeln!(out, "llm_tokens_total{{model=\"{}\",provider=\"{}\",direction=\"input\"}} {input}", label(m), label(p));
-        let _ = writeln!(out, "llm_tokens_total{{model=\"{}\",provider=\"{}\",direction=\"output\"}} {output}", label(m), label(p));
+        let _ = writeln!(
+            out,
+            "llm_tokens_total{{model=\"{}\",provider=\"{}\",direction=\"input\"}} {input}",
+            label(m),
+            label(p)
+        );
+        let _ = writeln!(
+            out,
+            "llm_tokens_total{{model=\"{}\",provider=\"{}\",direction=\"output\"}} {output}",
+            label(m),
+            label(p)
+        );
     }
-    let _ = writeln!(out, "# HELP llm_projected_monthly_cost_usd 30-day spend at the last hour's pace.");
+    let _ = writeln!(
+        out,
+        "# HELP llm_projected_monthly_cost_usd 30-day spend at the last hour's pace."
+    );
     let _ = writeln!(out, "# TYPE llm_projected_monthly_cost_usd gauge");
-    let _ = writeln!(out, "llm_projected_monthly_cost_usd {}", ledger.projected_monthly_usd(1));
+    let _ = writeln!(
+        out,
+        "llm_projected_monthly_cost_usd {}",
+        ledger.projected_monthly_usd(1)
+    );
     out
 }
 
@@ -305,11 +337,20 @@ mod tests {
     #[test]
     fn test_prometheus_text_format() {
         let mut ledger = CostLedger::new();
-        ledger.add(CostRecord::new("gpt-4o", "openai", 1_000_000, 0, 5)).unwrap();
-        ledger.add(CostRecord::new("gpt-4o", "openai", 1_000_000, 500_000, 5)).unwrap();
-        ledger.add(CostRecord::new("we\"ird\\model", "x", 10, 1, 5)).unwrap();
+        ledger
+            .add(CostRecord::new("gpt-4o", "openai", 1_000_000, 0, 5))
+            .unwrap();
+        ledger
+            .add(CostRecord::new("gpt-4o", "openai", 1_000_000, 500_000, 5))
+            .unwrap();
+        ledger
+            .add(CostRecord::new("we\"ird\\model", "x", 10, 1, 5))
+            .unwrap();
         let t = prometheus_text(&ledger);
-        assert!(t.contains("llm_cost_usd_total{model=\"gpt-4o\",provider=\"openai\"} 10\n"), "{t}");
+        assert!(
+            t.contains("llm_cost_usd_total{model=\"gpt-4o\",provider=\"openai\"} 10\n"),
+            "{t}"
+        );
         assert!(t.contains("llm_requests_total{model=\"gpt-4o\",provider=\"openai\"} 2\n"));
         assert!(t.contains("direction=\"output\"} 500000\n"));
         assert!(t.contains("model=\"we\\\"ird\\\\model\""), "{t}");
@@ -343,14 +384,16 @@ mod tests {
         let shared = Arc::new(Mutex::new(CostLedger::new()));
         let (tx, rx) = std::sync::mpsc::channel();
         let out = mirror_feed(rx, Arc::clone(&shared));
-        tx.send(r#"{"model":"gpt-4o","input_tokens":1000000,"output_tokens":0}"#.to_string()).unwrap();
+        tx.send(r#"{"model":"gpt-4o","input_tokens":1000000,"output_tokens":0}"#.to_string())
+            .unwrap();
         tx.send("not json".to_string()).unwrap();
         assert!(out.recv().unwrap().contains("gpt-4o"));
         assert_eq!(out.recv().unwrap(), "not json");
         let l = shared.lock().unwrap();
         assert_eq!(l.len(), 1);
         assert!((l.total_usd() - 2.5).abs() < 1e-9);
-        assert!(prometheus_text(&l).contains("llm_requests_total{model=\"gpt-4o\",provider=\"unknown\"} 1"));
+        assert!(prometheus_text(&l)
+            .contains("llm_requests_total{model=\"gpt-4o\",provider=\"unknown\"} 1"));
     }
 
     #[test]

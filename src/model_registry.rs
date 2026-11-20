@@ -123,7 +123,10 @@ impl ModelRegistry {
 
     /// Return all models that support `cap`.
     pub fn search_by_capability(&self, cap: &ModelCapability) -> Vec<&ModelInfo> {
-        self.models.iter().filter(|m| m.has_capability(cap)).collect()
+        self.models
+            .iter()
+            .filter(|m| m.has_capability(cap))
+            .collect()
     }
 
     /// Return the non-deprecated model with the lowest combined cost that supports `cap`.
@@ -166,7 +169,10 @@ impl ModelRegistry {
 
     /// Return all models from a given provider.
     pub fn models_by_provider(&self, provider: &str) -> Vec<&ModelInfo> {
-        self.models.iter().filter(|m| m.provider == provider).collect()
+        self.models
+            .iter()
+            .filter(|m| m.provider == provider)
+            .collect()
     }
 
     /// Pre-populated registry with ~8 well-known models.

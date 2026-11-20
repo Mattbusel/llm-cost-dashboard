@@ -170,17 +170,19 @@ impl DiffReport {
 
     /// Retrieve the total baseline cost from the model_changes fallback.
     fn baseline_period_cost(&self) -> f64 {
-        self.model_changes.iter().map(|m| m.baseline_usd).sum::<f64>()
-            + self
-                .removed_models
-                .iter()
-                .map(|_| 0.0_f64)
-                .sum::<f64>()
+        self.model_changes
+            .iter()
+            .map(|m| m.baseline_usd)
+            .sum::<f64>()
+            + self.removed_models.iter().map(|_| 0.0_f64).sum::<f64>()
     }
 
     /// Retrieve the total current cost from the model_changes.
     fn current_period_cost(&self) -> f64 {
-        self.model_changes.iter().map(|m| m.current_usd).sum::<f64>()
+        self.model_changes
+            .iter()
+            .map(|m| m.current_usd)
+            .sum::<f64>()
     }
 }
 

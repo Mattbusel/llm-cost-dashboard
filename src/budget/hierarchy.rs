@@ -250,12 +250,9 @@ impl OrgTree {
 
         let team_spent_before = team_node.envelope.spent_usd;
 
-        let project_node = team_node
-            .projects
-            .get_mut(project)
-            .ok_or_else(|| {
-                DashboardError::Ledger(format!("unknown project: {}/{}", team, project))
-            })?;
+        let project_node = team_node.projects.get_mut(project).ok_or_else(|| {
+            DashboardError::Ledger(format!("unknown project: {}/{}", team, project))
+        })?;
 
         // --- Dry-run hard-limit checks before mutating ---
         // Project
@@ -375,7 +372,11 @@ impl OrgTree {
                 }
             })
             .collect();
-        teams.sort_by(|a, b| b.fill.partial_cmp(&a.fill).unwrap_or(std::cmp::Ordering::Equal));
+        teams.sort_by(|a, b| {
+            b.fill
+                .partial_cmp(&a.fill)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         OrgSummary {
             org_name: self.org_name.clone(),
@@ -586,7 +587,7 @@ mod tests {
     fn summary_teams_sorted_by_fill_descending() {
         let mut tree = example_tree();
         tree.spend("data", "analytics", 180.0).unwrap(); // data: 180/400 = 45%
-        tree.spend("eng", "prod", 50.0).unwrap();         // eng:  50/500 = 10%
+        tree.spend("eng", "prod", 50.0).unwrap(); // eng:  50/500 = 10%
 
         let summary = tree.summary();
         assert_eq!(summary.teams[0].name, "data"); // data has higher fill

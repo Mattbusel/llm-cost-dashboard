@@ -23,7 +23,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         let mut l = ledger.lock().map_err(|e| e.to_string())?;
         l.add(CostRecord::new("gpt-4o-mini", "openai", 1200, 300, 410))?;
-        l.add(CostRecord::new("claude-sonnet-4-6", "anthropic", 5000, 800, 1900).with_cache(40_000, 0))?;
+        l.add(
+            CostRecord::new("claude-sonnet-4-6", "anthropic", 5000, 800, 1900)
+                .with_cache(40_000, 0),
+        )?;
     }
 
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 9898));

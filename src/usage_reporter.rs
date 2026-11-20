@@ -113,7 +113,9 @@ pub struct UsageReporter {
 impl UsageReporter {
     /// Create an empty reporter.
     pub fn new() -> Self {
-        Self { records: Vec::new() }
+        Self {
+            records: Vec::new(),
+        }
     }
 
     /// Append a single record.
@@ -126,12 +128,20 @@ impl UsageReporter {
     /// For `Daily`, `Weekly`, and `Monthly`, the window is measured backwards
     /// from the maximum timestamp present in the data set (or 0 if empty).
     pub fn filter_by_period<'a>(&'a self, period: &ReportPeriod) -> Vec<&'a UsageRecord> {
-        let max_ts = self.records.iter().map(|r| r.timestamp_epoch).max().unwrap_or(0);
+        let max_ts = self
+            .records
+            .iter()
+            .map(|r| r.timestamp_epoch)
+            .max()
+            .unwrap_or(0);
         let (start, end) = match period {
             ReportPeriod::Daily => (max_ts.saturating_sub(86_400), max_ts),
             ReportPeriod::Weekly => (max_ts.saturating_sub(7 * 86_400), max_ts),
             ReportPeriod::Monthly => (max_ts.saturating_sub(30 * 86_400), max_ts),
-            ReportPeriod::Custom { start_epoch, end_epoch } => (*start_epoch, *end_epoch),
+            ReportPeriod::Custom {
+                start_epoch,
+                end_epoch,
+            } => (*start_epoch, *end_epoch),
         };
         self.records
             .iter()
@@ -189,7 +199,11 @@ impl UsageReporter {
             num += (x - x_mean) * (y - y_mean);
             den += (x - x_mean).powi(2);
         }
-        let slope = if den.abs() < f64::EPSILON { 0.0 } else { num / den };
+        let slope = if den.abs() < f64::EPSILON {
+            0.0
+        } else {
+            num / den
+        };
 
         let first = buckets[0];
         let last = *buckets.last().unwrap();
@@ -207,15 +221,15 @@ impl UsageReporter {
             TrendDirection::Stable
         };
 
-        TrendAnalysis { direction, slope, percent_change }
+        TrendAnalysis {
+            direction,
+            slope,
+            percent_change,
+        }
     }
 
     /// Return the top `n` models sorted by descending cost.
-    pub fn top_n_models_by_cost(
-        &self,
-        n: usize,
-        records: &[&UsageRecord],
-    ) -> Vec<(String, f64)> {
+    pub fn top_n_models_by_cost(&self, n: usize, records: &[&UsageRecord]) -> Vec<(String, f64)> {
         let map = self.cost_by_model(records);
         let mut pairs: Vec<(String, f64)> = map.into_iter().collect();
         pairs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -237,7 +251,10 @@ impl UsageReporter {
             ReportPeriod::Daily => "Daily".to_string(),
             ReportPeriod::Weekly => "Weekly".to_string(),
             ReportPeriod::Monthly => "Monthly".to_string(),
-            ReportPeriod::Custom { start_epoch, end_epoch } => {
+            ReportPeriod::Custom {
+                start_epoch,
+                end_epoch,
+            } => {
                 format!("Custom ({start_epoch}–{end_epoch})")
             }
         };
@@ -343,10 +360,7 @@ impl UsageReporter {
                 let mut sorted: Vec<_> = by_model.iter().collect();
                 sorted.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap_or(std::cmp::Ordering::Equal));
                 for (model, cost) in &sorted {
-                    out.push_str(&format!(
-                        "{:<col_w$} {:>val_w$.4}\n",
-                        model, cost
-                    ));
+                    out.push_str(&format!("{:<col_w$} {:>val_w$.4}\n", model, cost));
                 }
                 out
             }
@@ -433,7 +447,9 @@ mod tests {
         let trend = reporter.token_trend(&records, 1);
         // Direction should be one of the three valid values.
         let _ = match trend.direction {
-            TrendDirection::Increasing | TrendDirection::Decreasing | TrendDirection::Stable => true,
+            TrendDirection::Increasing | TrendDirection::Decreasing | TrendDirection::Stable => {
+                true
+            }
         };
     }
 

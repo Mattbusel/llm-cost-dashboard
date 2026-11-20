@@ -230,7 +230,10 @@ impl InvoiceGenerator {
             epoch_to_date(invoice.period_start),
             epoch_to_date(invoice.period_end)
         ));
-        out.push_str(&format!("Issued   : {}\n", epoch_to_date(invoice.issued_at)));
+        out.push_str(&format!(
+            "Issued   : {}\n",
+            epoch_to_date(invoice.issued_at)
+        ));
         out.push_str(&format!("Due      : {}\n", epoch_to_date(invoice.due_at)));
         out.push_str(&format!("Status   : {}\n", invoice.status));
         out.push_str("-------------------------------------------------------\n");
@@ -332,7 +335,16 @@ fn days_to_ymd(mut days: u64) -> (u64, u64, u64) {
     let month_days: [u64; 12] = [
         31,
         if leap { 29 } else { 28 },
-        31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
     ];
     let mut month = 1u64;
     for &md in &month_days {
@@ -593,14 +605,20 @@ impl NewInvoiceGenerator {
         out.push_str("=======================================================\n");
         out.push_str(&format!("INVOICE  {}\n", invoice.invoice_id));
         out.push_str("=======================================================\n");
-        out.push_str(&format!("Customer : {} ({})\n", invoice.customer_name, invoice.customer_id));
+        out.push_str(&format!(
+            "Customer : {} ({})\n",
+            invoice.customer_name, invoice.customer_id
+        ));
         out.push_str(&format!("Currency : {}\n", invoice.currency));
         out.push_str(&format!("Status   : {}\n", invoice.status));
         if !invoice.notes.is_empty() {
             out.push_str(&format!("Notes    : {}\n", invoice.notes));
         }
         out.push_str("-------------------------------------------------------\n");
-        out.push_str(&format!("{:<30} {:>10} {:>12}\n", "Description", "Qty", "Total"));
+        out.push_str(&format!(
+            "{:<30} {:>10} {:>12}\n",
+            "Description", "Qty", "Total"
+        ));
         out.push_str("-------------------------------------------------------\n");
         for li in &invoice.line_items {
             out.push_str(&format!(
@@ -622,7 +640,9 @@ impl NewInvoiceGenerator {
     /// Render an invoice's line items as CSV.
     pub fn render_csv(&self, invoice: &NewInvoice) -> String {
         let mut out = String::new();
-        out.push_str("invoice_id,customer_id,model,description,quantity,unit_price_usd,total_usd\n");
+        out.push_str(
+            "invoice_id,customer_id,model,description,quantity,unit_price_usd,total_usd\n",
+        );
         for li in &invoice.line_items {
             out.push_str(&format!(
                 "{},{},{},{},{:.4},{:.6},{:.6}\n",
@@ -708,7 +728,9 @@ impl NewInvoiceGenerator {
         // Aggregate by customer.
         let mut customer_totals: HashMap<String, f64> = HashMap::new();
         for inv in &in_range {
-            *customer_totals.entry(inv.customer_id.clone()).or_insert(0.0) += inv.total_usd;
+            *customer_totals
+                .entry(inv.customer_id.clone())
+                .or_insert(0.0) += inv.total_usd;
         }
         let mut top_customers: Vec<(String, f64)> = customer_totals.into_iter().collect();
         top_customers.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -771,7 +793,11 @@ mod tests {
         assert_eq!(invoice.customer_id, "acme");
         assert_eq!(invoice.line_items.len(), 2);
         // gpt-4o: (2000+1000)/1000 * 0.005 = 0.015
-        let gpt_line = invoice.line_items.iter().find(|l| l.model_id == "gpt-4o").unwrap();
+        let gpt_line = invoice
+            .line_items
+            .iter()
+            .find(|l| l.model_id == "gpt-4o")
+            .unwrap();
         assert!((gpt_line.total_usd - 0.015).abs() < 1e-9);
     }
 
@@ -832,7 +858,11 @@ mod tests {
             0.0,
         );
         // gpt-4o total should reflect only the in-period record
-        let gpt = invoice.line_items.iter().find(|l| l.model_id == "gpt-4o").unwrap();
+        let gpt = invoice
+            .line_items
+            .iter()
+            .find(|l| l.model_id == "gpt-4o")
+            .unwrap();
         assert_eq!(gpt.input_tokens, 2000);
     }
 
@@ -885,7 +915,10 @@ mod tests {
         // subtotal should be 90 % of original
         assert!((invoice.subtotal_usd - original_subtotal * 0.9).abs() < 1e-9);
         // A discount line item should have been added
-        assert!(invoice.line_items.iter().any(|l| l.description.contains("Discount")));
+        assert!(invoice
+            .line_items
+            .iter()
+            .any(|l| l.description.contains("Discount")));
     }
 
     #[test]

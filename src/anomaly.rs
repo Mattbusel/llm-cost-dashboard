@@ -419,7 +419,8 @@ impl AnomalyDetector {
                     self.mean = 0.0;
                     self.m2 = 0.0;
                 } else {
-                    let new_mean = (self.mean * (self.count as f64 + 1.0) - old) / self.count as f64;
+                    let new_mean =
+                        (self.mean * (self.count as f64 + 1.0) - old) / self.count as f64;
                     self.m2 -= (old - self.mean) * (old - new_mean);
                     self.mean = new_mean;
                     if self.m2 < 0.0 {
@@ -526,7 +527,11 @@ mod welford_tests {
     use chrono::Utc;
 
     fn cfg(window: usize, threshold: f64, min_samples: usize) -> AnomalyConfig {
-        AnomalyConfig { window_size: window, z_threshold: threshold, min_samples }
+        AnomalyConfig {
+            window_size: window,
+            z_threshold: threshold,
+            min_samples,
+        }
     }
 
     #[test]
@@ -624,9 +629,7 @@ mod welford_tests {
     fn test_analyze_anomaly_rate_zero_for_normal_data() {
         let mut d = AnomalyDetector::new(cfg(50, 3.0, 5));
         let now = Utc::now();
-        let observations: Vec<(DateTime<Utc>, f64)> = (0..20)
-            .map(|_| (now, 0.001))
-            .collect();
+        let observations: Vec<(DateTime<Utc>, f64)> = (0..20).map(|_| (now, 0.001)).collect();
         let report = d.analyze(&observations);
         assert!(report.anomalies.is_empty());
         assert_eq!(report.anomaly_rate, 0.0);

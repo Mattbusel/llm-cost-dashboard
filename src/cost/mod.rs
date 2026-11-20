@@ -460,7 +460,6 @@ impl CostLedger {
             .map_err(|e| DashboardError::Ledger(e.to_string()))?;
         String::from_utf8(bytes).map_err(|e| DashboardError::Ledger(e.to_string()))
     }
-
 }
 
 #[cfg(test)]
@@ -481,7 +480,11 @@ mod tests {
         // every token is billed at the higher tier ($0.50 / $2.50, hit $0.05).
         let r = r.with_cache(200_000, 0);
         let expected = (1_000.0 * 0.50 + 1_000.0 * 2.50 + 200_000.0 * 0.05) / 1e6;
-        assert!((r.total_cost_usd - expected).abs() < 1e-12, "{}", r.total_cost_usd);
+        assert!(
+            (r.total_cost_usd - expected).abs() < 1e-12,
+            "{}",
+            r.total_cost_usd
+        );
     }
 
     #[test]
